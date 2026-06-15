@@ -1,0 +1,277 @@
+/* ============================================
+   PlayControl – Design System
+   Palette basée sur le logo : Bleu → Violet
+   Mode clair premium, smooth, gamer-oriented
+   Fonts embarquées pour le mode hors-ligne
+   ============================================ */
+
+/* --- Font Face (mode hors-ligne) --- */
+@import './components/ui/components.css';
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/Inter-Regular.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./assets/fonts/Inter-Medium.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./assets/fonts/Inter-SemiBold.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./assets/fonts/Inter-Bold.ttf') format('truetype');
+}
+
+/* --- CSS Variables (Design Tokens) --- */
+:root {
+  /* Primary – Bleu foncé / Navy du logo */
+  --primary-50: #e6f0fa;
+  --primary-100: #ccdcf2;
+  --primary-200: #99b8e6;
+  --primary-300: #6694d9;
+  --primary-400: #3370cc;
+  --primary-500: #0a429e;
+  --primary-600: #08357e;
+  --primary-700: #06285e;
+  --primary-800: #041b3f;
+  --primary-900: #020e1f;
+
+  /* Accent – Bleu électrique du logo */
+  --accent-50: #e0f7ff;
+  --accent-100: #b3e5ff;
+  --accent-200: #80d0ff;
+  --accent-300: #4dbbff;
+  --accent-400: #26acff;
+  --accent-500: #0096fe;
+  --accent-600: #0084e6;
+  --accent-700: #0070c7;
+  --accent-800: #005ca8;
+  --accent-900: #003d73;
+
+  /* Dégradé principal (navy → bleu électrique du logo) */
+  --gradient-primary: linear-gradient(135deg, #0a429e 0%, #0096fe 100%);
+  --gradient-primary-hover: linear-gradient(135deg, #08357e 0%, #0084e6 100%);
+  --gradient-subtle: linear-gradient(135deg, #e6f0fa 0%, #e0f7ff 100%);
+
+  /* Neutres */
+  --neutral-0: #ffffff;
+  --neutral-50: #f8f9fc;
+  --neutral-100: #f1f3f8;
+  --neutral-200: #e2e6ef;
+  --neutral-300: #cdd3e0;
+  --neutral-400: #9ba3b8;
+  --neutral-500: #6b7490;
+  --neutral-600: #4a5168;
+  --neutral-700: #353b50;
+  --neutral-800: #232838;
+  --neutral-900: #141722;
+
+  /* Sémantiques */
+  --success-50: #ecfdf5;
+  --success-100: #d1fae5;
+  --success-500: #10b981;
+  --success-600: #059669;
+  --success-700: #047857;
+
+  --warning-50: #fffbeb;
+  --warning-100: #fef3c7;
+  --warning-500: #f59e0b;
+  --warning-600: #d97706;
+
+  --danger-50: #fef2f2;
+  --danger-100: #fee2e2;
+  --danger-500: #ef4444;
+  --danger-600: #dc2626;
+  --danger-700: #b91c1c;
+
+  --info-50: #eff6ff;
+  --info-100: #dbeafe;
+  --info-500: #3b82f6;
+
+  /* Typographie */
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-xs: 0.75rem;
+  --font-sm: 0.8125rem;
+  --font-base: 0.9375rem;
+  --font-lg: 1.125rem;
+  --font-xl: 1.3125rem;
+  --font-2xl: 1.625rem;
+  --font-3xl: 2rem;
+  --font-4xl: 2.5rem;
+
+  /* Espacements */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  /* Rayons de bordure */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+
+  /* Ombres */
+  --shadow-xs: 0 1px 2px rgba(20, 23, 34, 0.04);
+  --shadow-sm: 0 1px 3px rgba(20, 23, 34, 0.06), 0 1px 2px rgba(20, 23, 34, 0.04);
+  --shadow-md: 0 4px 6px -1px rgba(20, 23, 34, 0.06), 0 2px 4px -1px rgba(20, 23, 34, 0.04);
+  --shadow-lg: 0 10px 15px -3px rgba(20, 23, 34, 0.06), 0 4px 6px -2px rgba(20, 23, 34, 0.03);
+  --shadow-xl: 0 20px 25px -5px rgba(20, 23, 34, 0.08), 0 10px 10px -5px rgba(20, 23, 34, 0.03);
+  --shadow-glow-primary: 0 0 20px rgba(26, 109, 224, 0.15);
+  --shadow-glow-accent: 0 0 20px rgba(124, 58, 237, 0.15);
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 350ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Sidebar */
+  --sidebar-width: 260px;
+  --sidebar-collapsed-width: 72px;
+  --topbar-height: 64px;
+}
+
+/* --- Reset & Base --- */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: var(--font-family);
+  font-size: var(--font-base);
+  color: var(--neutral-800);
+  background-color: var(--neutral-50);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-family: var(--font-family);
+}
+
+input,
+select,
+textarea {
+  font-family: var(--font-family);
+  font-size: var(--font-base);
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+/* --- Scrollbar personnalisée --- */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--neutral-300);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--neutral-400);
+}
+
+/* --- Utilities --- */
+.gradient-text {
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- Animations --- */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(26, 109, 224, 0.2); }
+  50% { box-shadow: 0 0 0 8px rgba(26, 109, 224, 0); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.animate-fade-in {
+  animation: fadeIn var(--transition-base) ease-out;
+}
+
+.animate-slide-in {
+  animation: slideInLeft var(--transition-base) ease-out;
+}
