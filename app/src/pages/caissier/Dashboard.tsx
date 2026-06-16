@@ -62,105 +62,7 @@ const formatPriceTag = (typeKey: string, materialTypes: MaterialType[]): string 
   return `${mType.price} FCFA / ${mType.durationMinutes} min`;
 };
 
-const printReceipt = (post: GameStation, materialTypes: MaterialType[]) => {
-  const ticketWindow = window.open('', '_blank', 'width=350,height=600');
-  if (!ticketWindow) {
-    alert("Veuillez autoriser les fenêtres pop-up pour imprimer la facture.");
-    return;
-  }
 
-  const dateStr = new Date().toLocaleString('fr-FR');
-  const durationText = post.totalDuration ? `${post.totalDuration} min` : 'N/A';
-  
-  const mType = materialTypes.find(t => t.type === post.type);
-  const rate = mType ? mType.price : 1000;
-  const rateDuration = mType ? mType.durationMinutes : 60;
-  const playedMins = post.totalDuration || 60;
-  const cost = Math.ceil((rate / rateDuration) * playedMins);
-
-  ticketWindow.document.write(`
-    <html>
-      <head>
-        <title>Facture de Session - PlayControl</title>
-        <style>
-          body {
-            font-family: 'Courier New', Courier, monospace;
-            width: 80mm;
-            padding: 15px;
-            margin: 0;
-            font-size: 13px;
-            color: #000;
-          }
-          .text-center { text-align: center; }
-          .header { margin-bottom: 15px; border-bottom: 1px dashed #000; padding-bottom: 10px; }
-          .title { font-size: 18px; font-weight: bold; margin: 5px 0; }
-          .info { margin-bottom: 15px; font-size: 12px; line-height: 1.4; }
-          .table { width: 100%; border-collapse: collapse; margin: 15px 0; }
-          .table th, .table td { text-align: left; padding: 6px 0; }
-          .table th { border-bottom: 1px solid #000; }
-          .total { font-size: 15px; font-weight: bold; border-top: 2px dashed #000; border-bottom: 2px dashed #000; padding: 8px 0; margin-top: 10px; display: flex; justify-content: space-between; }
-          .footer { margin-top: 25px; border-top: 1px dashed #000; padding-top: 10px; font-size: 11px; }
-        </style>
-      </head>
-      <body>
-        <div class="header text-center">
-          <div class="title">PLAYCONTROL</div>
-          <div>SALLE DE JEUX VIP</div>
-          <div style="font-size: 11px; margin-top: 2px;">Douala, Cameroun</div>
-        </div>
-
-        <div class="info">
-          <div><strong>Date:</strong> ${dateStr}</div>
-          <div><strong>Poste:</strong> ${post.name}</div>
-          <div><strong>Joueur:</strong> ${post.clientName || 'Invité'}</div>
-        </div>
-
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Description</th>
-              <th style="text-align: right;">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Session ${durationText}<br/>(${mType?.label || post.type})</td>
-              <td style="text-align: right; vertical-align: top;">${cost.toLocaleString()} FCFA</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div class="total">
-          <span>TOTAL:</span>
-          <span>${cost.toLocaleString()} FCFA</span>
-        </div>
-
-        <div style="margin-top: 10px; font-size: 12px;">
-          <strong>Mode de Paiement:</strong> Cash / Espèces
-        </div>
-
-        <div class="footer text-center">
-          <div>Merci pour votre visite et à bientôt !</div>
-          <div style="margin-top: 4px; font-weight: bold;">JEU SUPRÊME, SENSATION UNIQUE</div>
-          <div style="margin-top: 10px; font-size: 9px; opacity: 0.8;">PlayControl System</div>
-        </div>
-
-        <script>
-          window.onload = function() {
-            window.print();
-            window.onafterprint = function() {
-              window.close();
-            };
-            setTimeout(function() {
-              window.close();
-            }, 1000);
-          }
-        </script>
-      </body>
-    </html>
-  `);
-  ticketWindow.document.close();
-};
 
 interface MockClient {
   id: string;
@@ -173,16 +75,30 @@ interface MockClient {
 }
 
 export const CaissierDashboard: React.FC = () => {
-  const [postes, setPostes] = useState<GameStation[]>([
-    { id: '1', name: 'PS5 - VIP #1', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Manette DualSense Edge', smartPlugIp: '192.168.1.101', status: 'occupe', clientName: 'Gamer_Pro', minutesRemaining: 45, totalDuration: 120 },
-    { id: '2', name: 'PS5 - Standard #2', type: 'ps5_standard', characteristics: 'Écran 1080p, Manette standard', smartPlugIp: '192.168.1.102', status: 'libre' },
-    { id: '3', name: 'PS5 - Standard #3', type: 'ps5_standard', characteristics: 'Écran 1080p, Manette standard', smartPlugIp: '192.168.1.103', status: 'hors-service' },
-    { id: '4', name: 'PS5 - VIP #2', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Canapé Confort VIP', smartPlugIp: '192.168.1.104', status: 'occupe', clientName: 'Marc_K', minutesRemaining: 120, totalDuration: 180 },
-    { id: '5', name: 'PS4 - Standard #1', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.105', status: 'libre' },
-    { id: '6', name: 'PS4 - Standard #2', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.106', status: 'libre' },
-    { id: '7', name: 'PS5 - VIP #3', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Canapé Confort VIP', smartPlugIp: '192.168.1.107', status: 'occupe', clientName: 'Alain_T', minutesRemaining: 15, totalDuration: 60 },
-    { id: '8', name: 'PS4 - Standard #3', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.108', status: 'libre' },
-  ]);
+  const [postes, setPostes] = useState<GameStation[]>(() => {
+    const saved = localStorage.getItem('playcontrol_postes');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        // ignore
+      }
+    }
+    return [
+      { id: '1', name: 'PS5 - VIP #1', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Manette DualSense Edge', smartPlugIp: '192.168.1.101', status: 'occupe', clientName: 'Gamer_Pro', minutesRemaining: 45, totalDuration: 120 },
+      { id: '2', name: 'PS5 - Standard #2', type: 'ps5_standard', characteristics: 'Écran 1080p, Manette standard', smartPlugIp: '192.168.1.102', status: 'libre' },
+      { id: '3', name: 'PS5 - Standard #3', type: 'ps5_standard', characteristics: 'Écran 1080p, Manette standard', smartPlugIp: '192.168.1.103', status: 'hors-service' },
+      { id: '4', name: 'PS5 - VIP #2', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Canapé Confort VIP', smartPlugIp: '192.168.1.104', status: 'occupe', clientName: 'Marc_K', minutesRemaining: 120, totalDuration: 180 },
+      { id: '5', name: 'PS4 - Standard #1', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.105', status: 'libre' },
+      { id: '6', name: 'PS4 - Standard #2', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.106', status: 'libre' },
+      { id: '7', name: 'PS5 - VIP #3', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Canapé Confort VIP', smartPlugIp: '192.168.1.107', status: 'occupe', clientName: 'Alain_T', minutesRemaining: 15, totalDuration: 60 },
+      { id: '8', name: 'PS4 - Standard #3', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.108', status: 'libre' },
+    ];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('playcontrol_postes', JSON.stringify(postes));
+  }, [postes]);
 
   const mockClients: MockClient[] = [
     { id: '1', username: 'Gamer_Pro', fullName: 'Arthur Mbe', balance: 5400, hasAbonnement: true, abonnementType: 'VIP', abonnementRemainingTime: 240 },
@@ -237,14 +153,8 @@ export const CaissierDashboard: React.FC = () => {
   // Live Timer Effect
   useEffect(() => {
     const interval = setInterval(() => {
-      const currentMaterialTypes = getMaterialTypes();
-      setPostes(prevPostes => {
-        prevPostes.forEach(post => {
-          if (post.status === 'occupe' && post.minutesRemaining !== undefined && post.minutesRemaining <= 1) {
-            printReceipt(post, currentMaterialTypes);
-          }
-        });
-        return prevPostes.map(post => {
+      setPostes(prevPostes => 
+        prevPostes.map(post => {
           if (post.status === 'occupe' && post.minutesRemaining !== undefined) {
             if (post.minutesRemaining <= 1) {
               showToastMsg(`La session sur "${post.name}" pour "${post.clientName}" est terminée.`);
@@ -253,8 +163,8 @@ export const CaissierDashboard: React.FC = () => {
             return { ...post, minutesRemaining: post.minutesRemaining - 1 };
           }
           return post;
-        });
-      });
+        })
+      );
     }, 60000); // Update every minute
     return () => clearInterval(interval);
   }, []);
@@ -344,11 +254,6 @@ export const CaissierDashboard: React.FC = () => {
       "Terminer la session",
       `Êtes-vous sûr de vouloir forcer la fin de la session de "${clientName}" sur le poste "${name}" ?`,
       () => {
-        const targetPost = postes.find(p => p.id === id);
-        if (targetPost) {
-          const elapsedMinutes = Math.max(1, (targetPost.totalDuration || 0) - (targetPost.minutesRemaining || 0));
-          printReceipt({ ...targetPost, totalDuration: elapsedMinutes }, materialTypes);
-        }
         setPostes(postes.map(p => {
           if (p.id === id) {
             return { ...p, status: 'libre', clientName: undefined, minutesRemaining: undefined, totalDuration: undefined };

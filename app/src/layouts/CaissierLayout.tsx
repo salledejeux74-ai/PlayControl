@@ -3,15 +3,57 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { 
-  MonitorPlay, Users, Wallet, LogOut, Bell, Wifi, WifiOff 
+  MonitorPlay, Users, Wallet, LogOut, Bell, Wifi, WifiOff, ShieldAlert
 } from 'lucide-react';
 import logoImg from '../assets/logo.jpeg';
+
+interface GameStation {
+  id: string;
+  name: string;
+  type: string;
+  characteristics: string;
+  smartPlugIp: string;
+  status: 'libre' | 'occupe' | 'hors-service';
+  clientName?: string;
+  minutesRemaining?: number;
+  totalDuration?: number;
+}
+
+const getPostesFromStorage = (): GameStation[] => {
+  const saved = localStorage.getItem('playcontrol_postes');
+  if (saved) {
+    try {
+      return JSON.parse(saved);
+    } catch (e) {
+      // ignore
+    }
+  }
+  return [
+    { id: '1', name: 'PS5 - VIP #1', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Manette DualSense Edge', smartPlugIp: '192.168.1.101', status: 'occupe', clientName: 'Gamer_Pro', minutesRemaining: 45, totalDuration: 120 },
+    { id: '2', name: 'PS5 - Standard #2', type: 'ps5_standard', characteristics: 'Écran 1080p, Manette standard', smartPlugIp: '192.168.1.102', status: 'libre' },
+    { id: '3', name: 'PS5 - Standard #3', type: 'ps5_standard', characteristics: 'Écran 1080p, Manette standard', smartPlugIp: '192.168.1.103', status: 'hors-service' },
+    { id: '4', name: 'PS5 - VIP #2', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Canapé Confort VIP', smartPlugIp: '192.168.1.104', status: 'occupe', clientName: 'Marc_K', minutesRemaining: 120, totalDuration: 180 },
+    { id: '5', name: 'PS4 - Standard #1', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.105', status: 'libre' },
+    { id: '6', name: 'PS4 - Standard #2', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.106', status: 'libre' },
+    { id: '7', name: 'PS5 - VIP #3', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Canapé Confort VIP', smartPlugIp: '192.168.1.107', status: 'occupe', clientName: 'Alain_T', minutesRemaining: 15, totalDuration: 60 },
+    { id: '8', name: 'PS4 - Standard #3', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.108', status: 'libre' },
+  ];
+};
 
 export const CaissierLayout: React.FC = () => {
   const { user, logout } = useAuth();
   const isOnline = useOnlineStatus();
   const navigate = useNavigate();
   const [showNotifications, setShowNotifications] = useState(false);
+  const [restrictionModal, setRestrictionModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+  }>({
+    isOpen: false,
+    title: '',
+    message: ''
+  });
 
   const [isShiftActive, setIsShiftActive] = useState<boolean>(() => {
     return localStorage.getItem('playcontrol_shift_active') === 'true';
@@ -46,6 +88,26 @@ export const CaissierLayout: React.FC = () => {
   }
 
   const handleLogout = () => {
+    const activeShift = localStorage.getItem('playcontrol_shift_active') === 'true';
+    const currentPostes = getPostesFromStorage();
+    const hasActiveConsole = currentPostes.some(p => p.status === 'occupe');
+
+    if (activeShift || hasActiveConsole) {
+      const reasons: string[] = [];
+      if (activeShift) {
+        reasons.push("votre caisse/shift est actif");
+      }
+      if (hasActiveConsole) {
+        reasons.push("au moins une console tourne");
+      }
+      setRestrictionModal({
+        isOpen: true,
+        title: "Déconnexion impossible",
+        message: `Vous ne pouvez pas vous déconnecter car ${reasons.join(' et ')}. Veuillez clôturer les sessions de jeu et fermer la caisse avant de vous déconnecter.`
+      });
+      return;
+    }
+
     logout();
     navigate('/login');
   };
@@ -348,6 +410,68 @@ export const CaissierLayout: React.FC = () => {
           }
         }
       `}</style>
+      {restrictionModal.isOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.6)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: 'var(--space-4)'
+        }}>
+          <div className="card animate-fade-in" style={{
+            width: '100%',
+            maxWidth: '440px',
+            padding: 'var(--space-6)',
+            boxShadow: 'var(--shadow-xl)',
+            borderTop: '5px solid var(--danger-500)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 'var(--space-4)',
+            backgroundColor: 'var(--neutral-0)',
+            borderRadius: 'var(--radius-lg)'
+          }}>
+            <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
+              <div style={{
+                width: '40px',
+                height: '40px',
+                backgroundColor: 'var(--danger-50)',
+                color: 'var(--danger-600)',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <ShieldAlert size={20} />
+              </div>
+              <h3 style={{ fontSize: 'var(--font-base)', fontWeight: 800, color: 'var(--neutral-800)', margin: 0 }}>
+                {restrictionModal.title}
+              </h3>
+            </div>
+            
+            <p style={{ fontSize: 'var(--font-sm)', color: 'var(--neutral-600)', margin: 0, lineHeight: 1.5 }}>
+              {restrictionModal.message}
+            </p>
+            
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-2)' }}>
+              <button 
+                onClick={() => setRestrictionModal({ ...restrictionModal, isOpen: false })}
+                className="btn btn-secondary"
+                style={{ padding: '8px 16px', fontSize: 'var(--font-sm)' }}
+              >
+                Compris
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

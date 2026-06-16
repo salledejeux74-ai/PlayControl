@@ -4,6 +4,169 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { Landmark, Wallet, Check, AlertTriangle, FileDown, ShieldAlert } from 'lucide-react';
 
+interface GameStation {
+  id: string;
+  name: string;
+  type: string;
+  characteristics: string;
+  smartPlugIp: string;
+  status: 'libre' | 'occupe' | 'hors-service';
+  clientName?: string;
+  minutesRemaining?: number;
+  totalDuration?: number;
+}
+
+const getPostesFromStorage = (): GameStation[] => {
+  const saved = localStorage.getItem('playcontrol_postes');
+  if (saved) {
+    try {
+      return JSON.parse(saved);
+    } catch (e) {
+      // ignore
+    }
+  }
+  return [
+    { id: '1', name: 'PS5 - VIP #1', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Manette DualSense Edge', smartPlugIp: '192.168.1.101', status: 'occupe', clientName: 'Gamer_Pro', minutesRemaining: 45, totalDuration: 120 },
+    { id: '2', name: 'PS5 - Standard #2', type: 'ps5_standard', characteristics: 'Écran 1080p, Manette standard', smartPlugIp: '192.168.1.102', status: 'libre' },
+    { id: '3', name: 'PS5 - Standard #3', type: 'ps5_standard', characteristics: 'Écran 1080p, Manette standard', smartPlugIp: '192.168.1.103', status: 'hors-service' },
+    { id: '4', name: 'PS5 - VIP #2', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Canapé Confort VIP', smartPlugIp: '192.168.1.104', status: 'occupe', clientName: 'Marc_K', minutesRemaining: 120, totalDuration: 180 },
+    { id: '5', name: 'PS4 - Standard #1', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.105', status: 'libre' },
+    { id: '6', name: 'PS4 - Standard #2', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.106', status: 'libre' },
+    { id: '7', name: 'PS5 - VIP #3', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Canapé Confort VIP', smartPlugIp: '192.168.1.107', status: 'occupe', clientName: 'Alain_T', minutesRemaining: 15, totalDuration: 60 },
+    { id: '8', name: 'PS4 - Standard #3', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.108', status: 'libre' },
+  ];
+};
+
+const printShiftReceipt = (data: {
+  cashierName: string;
+  initialCash: number;
+  cashSales: number;
+  mobMoneySales: number;
+  totalShiftSales: number;
+  expectedCashInDrawer: number;
+  countedCash: number;
+  cashDifference: number;
+}) => {
+  const ticketWindow = window.open('', '_blank', 'width=350,height=600');
+  if (!ticketWindow) {
+    alert("Veuillez autoriser les fenêtres pop-up pour imprimer le reçu de clôture de caisse.");
+    return;
+  }
+
+  const dateStr = new Date().toLocaleString('fr-FR');
+  const diffPrefix = data.cashDifference >= 0 ? '+' : '';
+  const diffColor = data.cashDifference === 0 ? '#000' : data.cashDifference > 0 ? '#15803d' : '#b91c1c';
+
+  ticketWindow.document.write(`
+    <html>
+      <head>
+        <title>Rapport de Clôture de Caisse - PlayControl</title>
+        <style>
+          body {
+            font-family: 'Courier New', Courier, monospace;
+            width: 80mm;
+            padding: 15px;
+            margin: 0;
+            font-size: 13px;
+            color: #000;
+          }
+          .text-center { text-align: center; }
+          .header { margin-bottom: 15px; border-bottom: 1px dashed #000; padding-bottom: 10px; }
+          .title { font-size: 16px; font-weight: bold; margin: 5px 0; }
+          .subtitle { font-size: 12px; font-weight: bold; margin-bottom: 5px; }
+          .info { margin-bottom: 15px; font-size: 12px; line-height: 1.4; }
+          .table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+          .table td { padding: 4px 0; }
+          .divider { border-top: 1px dashed #000; margin: 10px 0; }
+          .double-divider { border-top: 2px dashed #000; margin: 10px 0; }
+          .total { font-weight: bold; }
+          .footer { margin-top: 25px; border-top: 1px dashed #000; padding-top: 10px; font-size: 11px; }
+        </style>
+      </head>
+      <body>
+        <div class="header text-center">
+          <div class="title">PLAYCONTROL</div>
+          <div class="subtitle">RAPPORT DE FIN DE SERVICE</div>
+          <div style="font-size: 11px;">Douala, Cameroun</div>
+        </div>
+
+        <div class="info">
+          <div><strong>Date/Heure:</strong> ${dateStr}</div>
+          <div><strong>Caissier:</strong> ${data.cashierName}</div>
+          <div><strong>Statut:</strong> Shift Clôturé</div>
+        </div>
+
+        <div class="divider"></div>
+
+        <table class="table">
+          <tbody>
+            <tr>
+              <td>Fonds Initial:</td>
+              <td style="text-align: right;">${data.initialCash.toLocaleString()} FCFA</td>
+            </tr>
+            <tr>
+              <td>Ventes Espèces:</td>
+              <td style="text-align: right;">+${data.cashSales.toLocaleString()} FCFA</td>
+            </tr>
+            <tr>
+              <td>Ventes Mobile Money:</td>
+              <td style="text-align: right;">+${data.mobMoneySales.toLocaleString()} FCFA</td>
+            </tr>
+            <tr class="total">
+              <td>Total Recettes:</td>
+              <td style="text-align: right;">${data.totalShiftSales.toLocaleString()} FCFA</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="divider"></div>
+
+        <table class="table">
+          <tbody>
+            <tr>
+              <td>Espèces Attendues:</td>
+              <td style="text-align: right; font-weight: bold;">${data.expectedCashInDrawer.toLocaleString()} FCFA</td>
+            </tr>
+            <tr>
+              <td>Espèces Comptées:</td>
+              <td style="text-align: right; font-weight: bold;">${data.countedCash.toLocaleString()} FCFA</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="double-divider"></div>
+
+        <table class="table">
+          <tbody>
+            <tr style="font-size: 14px; font-weight: bold;">
+              <td>ÉCART DE CAISSE:</td>
+              <td style="text-align: right; color: ${diffColor};">${diffPrefix}${data.cashDifference.toLocaleString()} FCFA</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="footer text-center">
+          <div>Fin de shift enregistrée dans le système.</div>
+          <div style="margin-top: 10px; font-size: 9px; opacity: 0.8;">PlayControl System</div>
+        </div>
+
+        <script>
+          window.onload = function() {
+            window.print();
+            window.onafterprint = function() {
+              window.close();
+            };
+            setTimeout(function() {
+              window.close();
+            }, 1000);
+          }
+        </script>
+      </body>
+    </html>
+  `);
+  ticketWindow.document.close();
+};
+
 interface Transaction {
   id: string;
   time: string;
@@ -14,7 +177,7 @@ interface Transaction {
 }
 
 export const CaissierEncaissements: React.FC = () => {
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
 
   const [initialCash] = useState<number>(() => {
@@ -31,6 +194,15 @@ export const CaissierEncaissements: React.FC = () => {
 
   const [showCloseShiftModal, setShowCloseShiftModal] = useState(false);
   const [actualCashInput, setActualCashInput] = useState<string>('');
+  const [restrictionModal, setRestrictionModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+  }>({
+    isOpen: false,
+    title: '',
+    message: ''
+  });
 
   // Toast notifications
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -60,11 +232,34 @@ export const CaissierEncaissements: React.FC = () => {
   const handleCloseShiftConfirm = (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Check if there are active consoles
+    const currentPostes = getPostesFromStorage();
+    const hasActiveConsole = currentPostes.some(p => p.status === 'occupe');
+    if (hasActiveConsole) {
+      setRestrictionModal({
+        isOpen: true,
+        title: "Clôture impossible",
+        message: "Impossible de clôturer le shift car il y a encore des consoles en cours d'utilisation. Veuillez forcer la fin des sessions ou attendre qu'elles se terminent."
+      });
+      return;
+    }
+
     // Reset shift status in localStorage
     localStorage.setItem('playcontrol_shift_active', 'false');
     localStorage.removeItem('playcontrol_shift_initial_cash');
 
-    // Simulate closure printing receipt
+    // Print closure receipt
+    printShiftReceipt({
+      cashierName: user?.name || 'Sophie Caisse',
+      initialCash,
+      cashSales,
+      mobMoneySales,
+      totalShiftSales,
+      expectedCashInDrawer,
+      countedCash,
+      cashDifference
+    });
+
     showToastMsg("Shift clôturé avec succès. Impression du reçu de caisse...");
     
     setTimeout(() => {
@@ -308,6 +503,55 @@ export const CaissierEncaissements: React.FC = () => {
           <span>{toast.message}</span>
         </div>,
         document.body
+      )}
+      {restrictionModal.isOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          backgroundColor: 'rgba(20, 23, 34, 0.4)',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <div className="card animate-fade-in" style={{ width: '100%', maxWidth: '440px', padding: 'var(--space-6)', borderTop: '5px solid var(--danger-500)', backgroundColor: 'var(--neutral-0)', borderRadius: 'var(--radius-lg)' }}>
+            <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
+              <div style={{
+                width: '40px',
+                height: '40px',
+                backgroundColor: 'var(--danger-50)',
+                color: 'var(--danger-600)',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <ShieldAlert size={20} />
+              </div>
+              <h3 style={{ fontSize: 'var(--font-base)', fontWeight: 800, color: 'var(--neutral-800)', margin: 0 }}>
+                {restrictionModal.title}
+              </h3>
+            </div>
+            
+            <p style={{ fontSize: 'var(--font-sm)', color: 'var(--neutral-600)', margin: 0, lineHeight: 1.5, marginBottom: 'var(--space-4)' }}>
+              {restrictionModal.message}
+            </p>
+            
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button 
+                onClick={() => setRestrictionModal({ ...restrictionModal, isOpen: false })}
+                className="btn btn-secondary"
+                style={{ padding: '8px 16px', fontSize: 'var(--font-sm)' }}
+              >
+                Compris
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
