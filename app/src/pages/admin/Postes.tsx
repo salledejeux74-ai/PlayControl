@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   Gamepad2, Monitor, HelpCircle, Plus, Search, 
-  Trash2, Play, Ban, ArrowRightLeft, Clock
+  Trash2, Play, Ban, ArrowRightLeft, Clock, Edit2
 } from 'lucide-react';
 
 interface GameStation {
   id: string;
   name: string;
-  type: 'console' | 'pc' | 'vr';
+  type: string;
   characteristics: string;
   smartPlugIp: string;
   status: 'libre' | 'occupe' | 'hors-service';
@@ -16,6 +16,32 @@ interface GameStation {
   minutesRemaining?: number;
   totalDuration?: number; // In minutes
 }
+
+interface MaterialType {
+  id: string;
+  type: string;
+  label: string;
+  price: number;
+  durationMinutes: number;
+}
+
+const DEFAULT_MATERIAL_TYPES: MaterialType[] = [
+  { id: '1', type: 'console', label: 'Console PS5 (Standard & VIP)', price: 1200, durationMinutes: 60 },
+  { id: '2', type: 'pc', label: 'PC Gamer RTX (Gaming Zone)', price: 800, durationMinutes: 60 },
+  { id: '3', type: 'vr', label: 'VR Headset (Meta Quest & HTC Vive)', price: 2500, durationMinutes: 60 },
+];
+
+const getMaterialTypes = (): MaterialType[] => {
+  const saved = localStorage.getItem('playcontrol_material_types');
+  if (saved) {
+    try {
+      return JSON.parse(saved);
+    } catch (e) {
+      // ignore
+    }
+  }
+  return DEFAULT_MATERIAL_TYPES;
+};
 
 interface MockClient {
   id: string;
@@ -48,7 +74,7 @@ export const AdminPostes: React.FC = () => {
   ];
 
   // Filters
-  const [filterType, setFilterType] = useState<'all' | 'console' | 'pc' | 'vr'>('all');
+  const [filterType, setFilterType] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<'all' | 'libre' | 'occupe' | 'hors-service'>('all');
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -58,11 +84,23 @@ export const AdminPostes: React.FC = () => {
   const [showTransferModal, setShowTransferModal] = useState<GameStation | null>(null);
   const [showExtendModal, setShowExtendModal] = useState<GameStation | null>(null);
 
+  // Dynamic material types
+  const materialTypes = getMaterialTypes();
+  const defaultTypeKey = materialTypes[0]?.type || 'console';
+
   // Form states
   const [newName, setNewName] = useState('');
-  const [newType, setNewType] = useState<'console' | 'pc' | 'vr'>('console');
+  const [newType, setNewType] = useState<string>(defaultTypeKey);
   const [newCharacteristics, setNewCharacteristics] = useState('');
   const [newSmartPlugIp, setNewSmartPlugIp] = useState('');
+
+  // Edit Mode states
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [showEditModal, setShowEditModal] = useState<GameStation | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editType, setEditType] = useState<string>(defaultTypeKey);
+  const [editCharacteristics, setEditCharacteristics] = useState('');
+  const [editSmartPlugIp, setEditSmartPlugIp] = useState('');
 
   // Session Launch states
   const [selectedClient, setSelectedClient] = useState(mockClients[1].username); // Default to Marc_K
@@ -140,6 +178,44 @@ export const AdminPostes: React.FC = () => {
     setNewCharacteristics('');
     setNewSmartPlugIp('');
     showToastMsg(`Le poste "${newName}" a été créé avec succès.`);
+  };
+
+  // Edit mode handlers
+  const setEditPoste = (post: GameStation) => {
+    setShowEditModal(post);
+    setEditName(post.name);
+    setEditType(post.type);
+    setEditCharacteristics(post.characteristics);
+    setEditSmartPlugIp(post.smartPlugIp);
+  };
+
+  const handleSaveEditPoste = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!showEditModal) return;
+    if (!editName) return;
+
+    // Check unique name except for the current editing post
+    if (postes.some(p => p.id !== showEditModal.id && p.name.toLowerCase() === editName.toLowerCase())) {
+      showToastMsg(`Le poste "${editName}" existe déjà.`, 'error');
+      return;
+    }
+
+    setPostes(postes.map(p => {
+      if (p.id === showEditModal.id) {
+        return {
+          ...p,
+          name: editName,
+          type: editType,
+          characteristics: editCharacteristics,
+          smartPlugIp: editSmartPlugIp
+        };
+      }
+      return p;
+    }));
+
+    setShowEditModal(null);
+    setIsEditMode(false);
+    showToastMsg(`Le poste "${editName}" a été modifié avec succès.`);
   };
 
   // Delete Station
@@ -328,10 +404,45 @@ export const AdminPostes: React.FC = () => {
             Supervisez les PC, PS5 et casques VR en temps réel. Lancez, transférez ou terminez les sessions.
           </p>
         </div>
-        <button className="btn btn-black" onClick={() => setShowAddModal(true)} style={{ gap: 'var(--space-2)' }}>
-          <Plus size={18} /> Ajouter un Poste
-        </button>
+        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+          <button 
+            type="button"
+            className={`btn ${isEditMode ? 'btn-black' : 'btn-secondary'}`} 
+            onClick={() => setIsEditMode(!isEditMode)} 
+            style={{ 
+              gap: 'var(--space-2)', 
+              borderColor: isEditMode ? '#f59e0b' : undefined,
+              boxShadow: isEditMode ? '0 0 10px rgba(245, 158, 11, 0.2)' : undefined
+            }}
+          >
+            <Edit2 size={18} style={{ color: isEditMode ? '#f59e0b' : 'inherit' }} />
+            {isEditMode ? 'Quitter Édition' : 'Modifier'}
+          </button>
+          <button className="btn btn-black" onClick={() => { setNewType(defaultTypeKey); setShowAddModal(true); }} style={{ gap: 'var(--space-2)' }}>
+            <Plus size={18} /> Ajouter un Poste
+          </button>
+        </div>
       </div>
+
+      {isEditMode && (
+        <div style={{
+          backgroundColor: '#fffbeb',
+          border: '1.5px dashed #f59e0b',
+          borderRadius: 'var(--radius-md)',
+          padding: 'var(--space-3) var(--space-4)',
+          color: '#b45309',
+          fontSize: 'var(--font-sm)',
+          fontWeight: 600,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--space-2)',
+          boxShadow: 'var(--shadow-sm)',
+          animation: 'fade-in 0.2s ease-out'
+        }}>
+          <Edit2 size={16} style={{ color: '#f59e0b' }} />
+          <span>Mode Modification Actif : Cliquez sur un poste pour modifier sa configuration.</span>
+        </div>
+      )}
 
       {/* Filter and stats bar */}
       <div className="card" style={{ padding: 'var(--space-4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-4)' }}>
@@ -358,9 +469,9 @@ export const AdminPostes: React.FC = () => {
             style={{ width: '140px', height: '38px', padding: '0 var(--space-3)', fontSize: 'var(--font-sm)' }}
           >
             <option value="all">Tous les types</option>
-            <option value="console">Consoles PS5</option>
-            <option value="pc">PC Gamer</option>
-            <option value="vr">VR Room</option>
+            {materialTypes.map(t => (
+              <option key={t.type} value={t.type}>{t.label}</option>
+            ))}
           </select>
 
           {/* Status Filter */}
@@ -392,19 +503,31 @@ export const AdminPostes: React.FC = () => {
             : 0;
 
           return (
-            <div key={post.id} className="card animate-fade-in" style={{
-              padding: 'var(--space-5)',
-              border: `1.5px solid ${
-                post.status === 'occupe' ? 'rgba(10, 66, 158, 0.15)' : 
-                post.status === 'hors-service' ? 'var(--neutral-200)' : 
-                'rgba(16, 185, 129, 0.15)'
-              }`,
-              boxShadow: post.status === 'occupe' ? 'var(--shadow-glow-primary)' : 'var(--shadow-sm)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 'var(--space-4)',
-              opacity: post.status === 'hors-service' ? 0.75 : 1
-            }}>
+            <div 
+              key={post.id} 
+              className="card animate-fade-in" 
+              onClick={() => {
+                if (isEditMode) {
+                  setEditPoste(post);
+                }
+              }}
+              style={{
+                padding: 'var(--space-5)',
+                border: `1.5px solid ${
+                  isEditMode ? '#f59e0b' :
+                  post.status === 'occupe' ? 'rgba(10, 66, 158, 0.15)' : 
+                  post.status === 'hors-service' ? 'var(--neutral-200)' : 
+                  'rgba(16, 185, 129, 0.15)'
+                }`,
+                boxShadow: isEditMode ? '0 4px 12px rgba(245, 158, 11, 0.15)' : (post.status === 'occupe' ? 'var(--shadow-glow-primary)' : 'var(--shadow-sm)'),
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 'var(--space-4)',
+                opacity: post.status === 'hors-service' ? 0.75 : 1,
+                cursor: isEditMode ? 'pointer' : 'default',
+                transition: 'all 0.2s ease-in-out'
+              }}
+            >
               {/* Top Row: Name, Type and Status indicator */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -412,10 +535,22 @@ export const AdminPostes: React.FC = () => {
                     {post.name}
                   </span>
                   <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--neutral-400)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-                    {post.type === 'pc' && <Monitor size={10} />}
-                    {post.type === 'console' && <Gamepad2 size={10} />}
-                    {post.type === 'vr' && <HelpCircle size={10} />}
-                    {post.type}
+                    {(() => {
+                      const tLower = post.type.toLowerCase();
+                      const label = materialTypes.find(t => t.type === post.type)?.label || post.type;
+                      let icon = <Gamepad2 size={10} />;
+                      if (tLower.includes('pc') || tLower.includes('computer')) {
+                        icon = <Monitor size={10} />;
+                      } else if (tLower.includes('vr') || tLower.includes('quest') || tLower.includes('vive') || tLower.includes('virtual')) {
+                        icon = <HelpCircle size={10} />;
+                      }
+                      return (
+                        <>
+                          {icon}
+                          {label}
+                        </>
+                      );
+                    })()}
                   </span>
                 </div>
                 <span className={`badge ${
@@ -457,70 +592,94 @@ export const AdminPostes: React.FC = () => {
 
               {/* Bottom Row: Actions */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', borderTop: '1px solid var(--neutral-100)', paddingTop: 'var(--space-3)' }}>
-                {post.status === 'libre' && (
+                {isEditMode ? (
+                  <button 
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditPoste(post);
+                    }} 
+                    className="btn btn-secondary btn-sm" 
+                    style={{ 
+                      color: '#b45309', 
+                      borderColor: '#fcd34d', 
+                      backgroundColor: '#fffbeb', 
+                      gap: '4px',
+                      width: '100%',
+                      justifyContent: 'center'
+                    }}
+                    title="Modifier la configuration"
+                  >
+                    <Edit2 size={12} /> Modifier la configuration
+                  </button>
+                ) : (
                   <>
-                    <button 
-                      onClick={() => setShowLaunchModal(post)} 
-                      className="btn btn-secondary btn-sm" 
-                      style={{ color: 'var(--success-700)', borderColor: 'var(--success-100)', backgroundColor: 'var(--success-50)', gap: '4px' }}
-                      title="Lancer une session"
-                    >
-                      <Play size={12} /> Jouer
-                    </button>
-                    <button 
-                      onClick={() => handleToggleOutOfService(post.id, post.name, post.status)} 
-                      className="btn btn-secondary btn-icon btn-sm" 
-                      title="Mettre hors-service"
-                    >
-                      <Ban size={12} />
-                    </button>
-                  </>
-                )}
+                    {post.status === 'libre' && (
+                      <>
+                        <button 
+                          onClick={() => setShowLaunchModal(post)} 
+                          className="btn btn-secondary btn-sm" 
+                          style={{ color: 'var(--success-700)', borderColor: 'var(--success-100)', backgroundColor: 'var(--success-50)', gap: '4px' }}
+                          title="Lancer une session"
+                        >
+                          <Play size={12} /> Jouer
+                        </button>
+                        <button 
+                          onClick={() => handleToggleOutOfService(post.id, post.name, post.status)} 
+                          className="btn btn-secondary btn-icon btn-sm" 
+                          title="Mettre hors-service"
+                        >
+                          <Ban size={12} />
+                        </button>
+                      </>
+                    )}
 
-                {post.status === 'occupe' && (
-                  <>
-                    <button 
-                      onClick={() => setShowExtendModal(post)} 
-                      className="btn btn-secondary btn-sm" 
-                      title="Prolonger"
-                    >
-                      <Clock size={12} />
-                    </button>
-                    <button 
-                      onClick={() => setShowTransferModal(post)} 
-                      className="btn btn-secondary btn-sm" 
-                      title="Transférer de poste"
-                    >
-                      <ArrowRightLeft size={12} />
-                    </button>
-                    <button 
-                      onClick={() => handleEndSession(post.id, post.name, post.clientName || '')} 
-                      className="btn btn-secondary btn-sm" 
-                      style={{ color: 'var(--danger-500)', borderColor: 'var(--danger-100)' }}
-                      title="Terminer la session"
-                    >
-                      Arrêter
-                    </button>
-                  </>
-                )}
+                    {post.status === 'occupe' && (
+                      <>
+                        <button 
+                          onClick={() => setShowExtendModal(post)} 
+                          className="btn btn-secondary btn-sm" 
+                          title="Prolonger"
+                        >
+                          <Clock size={12} />
+                        </button>
+                        <button 
+                          onClick={() => setShowTransferModal(post)} 
+                          className="btn btn-secondary btn-sm" 
+                          title="Transférer de poste"
+                        >
+                          <ArrowRightLeft size={12} />
+                        </button>
+                        <button 
+                          onClick={() => handleEndSession(post.id, post.name, post.clientName || '')} 
+                          className="btn btn-secondary btn-sm" 
+                          style={{ color: 'var(--danger-500)', borderColor: 'var(--danger-100)' }}
+                          title="Terminer la session"
+                        >
+                          Arrêter
+                        </button>
+                      </>
+                    )}
 
-                {post.status === 'hors-service' && (
-                  <>
-                    <button 
-                      onClick={() => handleToggleOutOfService(post.id, post.name, post.status)} 
-                      className="btn btn-secondary btn-sm" 
-                      style={{ color: 'var(--primary-600)', borderColor: 'var(--primary-100)' }}
-                    >
-                      Remettre En Service
-                    </button>
-                    <button 
-                      onClick={() => handleDeletePoste(post.id, post.name)} 
-                      className="btn btn-secondary btn-icon btn-sm" 
-                      style={{ color: 'var(--danger-500)', borderColor: 'var(--danger-100)' }}
-                      title="Supprimer définitivement"
-                    >
-                      <Trash2 size={12} />
-                    </button>
+                    {post.status === 'hors-service' && (
+                      <>
+                        <button 
+                          onClick={() => handleToggleOutOfService(post.id, post.name, post.status)} 
+                          className="btn btn-secondary btn-sm" 
+                          style={{ color: 'var(--primary-600)', borderColor: 'var(--primary-100)' }}
+                        >
+                          Remettre En Service
+                        </button>
+                        <button 
+                          onClick={() => handleDeletePoste(post.id, post.name)} 
+                          className="btn btn-secondary btn-icon btn-sm" 
+                          style={{ color: 'var(--danger-500)', borderColor: 'var(--danger-100)' }}
+                          title="Supprimer définitivement"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </>
+                    )}
                   </>
                 )}
               </div>
@@ -569,9 +728,9 @@ export const AdminPostes: React.FC = () => {
                   value={newType}
                   onChange={(e: any) => setNewType(e.target.value)}
                 >
-                  <option value="console">Console PS5</option>
-                  <option value="pc">PC Gamer</option>
-                  <option value="vr">VR Room</option>
+                  {materialTypes.map(t => (
+                    <option key={t.type} value={t.type}>{t.label}</option>
+                  ))}
                 </select>
               </div>
 
@@ -845,6 +1004,85 @@ export const AdminPostes: React.FC = () => {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-4)' }}>
                 <button type="button" className="btn btn-secondary" onClick={() => setShowExtendModal(null)}>Annuler</button>
                 <button type="submit" className="btn btn-black">Prolonger</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Poste Modal */}
+      {showEditModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          backgroundColor: 'rgba(20, 23, 34, 0.4)',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <div className="card animate-fade-in" style={{ width: '100%', maxWidth: '460px', padding: 'var(--space-8)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-6)' }}>
+              <h3 style={{ fontSize: 'var(--font-lg)', fontWeight: 700 }}>Modifier le Poste</h3>
+              <button className="btn btn-ghost" onClick={() => setShowEditModal(null)}>✕</button>
+            </div>
+
+            <form onSubmit={handleSaveEditPoste} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+              <div className="input-group">
+                <label className="input-label">Nom du poste</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  placeholder="Ex: PS5 - VIP #3" 
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  required 
+                />
+              </div>
+
+              <div className="input-group">
+                <label className="input-label">Type de matériel</label>
+                <select 
+                  className="select-field"
+                  value={editType}
+                  onChange={(e: any) => setEditType(e.target.value)}
+                >
+                  {materialTypes.map(t => (
+                    <option key={t.type} value={t.type}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="input-group">
+                <label className="input-label">Description / Caractéristiques</label>
+                <textarea 
+                  className="input-field" 
+                  placeholder="Ex: Écran OLED 4K, 120Hz, manettes supplémentaires..." 
+                  value={editCharacteristics}
+                  onChange={(e) => setEditCharacteristics(e.target.value)}
+                  rows={2}
+                  style={{ resize: 'none' }}
+                />
+              </div>
+
+              <div className="input-group">
+                <label className="input-label">Adresse IP Prise Connectée (Smart Plug)</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  placeholder="Ex: 192.168.1.101" 
+                  value={editSmartPlugIp}
+                  onChange={(e) => setEditSmartPlugIp(e.target.value)}
+                />
+                <span className="input-hint">Permet de couper automatiquement le courant de l'écran en fin de session.</span>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-4)' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowEditModal(null)}>Annuler</button>
+                <button type="submit" className="btn btn-black">Enregistrer les modifications</button>
               </div>
             </form>
           </div>

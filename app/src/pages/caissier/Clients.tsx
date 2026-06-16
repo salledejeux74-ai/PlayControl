@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Search, Trash2, ShieldAlert, CreditCard, Award, UserMinus, UserCheck } from 'lucide-react';
+import { Plus, Search, Trash2, ShieldAlert, CreditCard, Award, UserMinus, UserCheck, Edit2 } from 'lucide-react';
 
 interface MemberClient {
   id: string;
@@ -34,6 +34,13 @@ export const CaissierClients: React.FC = () => {
   const [newUsername, setNewUsername] = useState('');
   const [phoneCountryCode, setPhoneCountryCode] = useState('+237');
   const [rawPhoneNum, setRawPhoneNum] = useState('');
+
+  // Form states (Edit)
+  const [showEditModal, setShowEditModal] = useState<MemberClient | null>(null);
+  const [editFullName, setEditFullName] = useState('');
+  const [editUsername, setEditUsername] = useState('');
+  const [editPhoneCountryCode, setEditPhoneCountryCode] = useState('+237');
+  const [editRawPhoneNum, setEditRawPhoneNum] = useState('');
 
   // Recharge state
   const [rechargeAmount, setRechargeAmount] = useState<number>(2000);
@@ -85,6 +92,80 @@ export const CaissierClients: React.FC = () => {
     if (numbersOnly.length <= activeCountry.length) {
       setRawPhoneNum(numbersOnly);
     }
+  };
+
+  const generateUsername = (name: string): string => {
+    return name
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "") // remove accents
+      .replace(/[^a-z0-9\s_-]/g, "")   // keep alpha-numeric, space, underscore, hyphen
+      .trim()
+      .replace(/[\s-]+/g, "_");        // replace spaces/hyphens with underscore
+  };
+
+  const handleEditPhoneInputChange = (val: string) => {
+    const activeCountry = countries.find(c => c.code === editPhoneCountryCode) || countries[0];
+    const numbersOnly = val.replace(/\D/g, '');
+    if (numbersOnly.length <= activeCountry.length) {
+      setEditRawPhoneNum(numbersOnly);
+    }
+  };
+
+  const handleStartEditClient = (client: MemberClient) => {
+    setShowEditModal(client);
+    setEditFullName(client.fullName);
+    setEditUsername(client.username);
+    
+    const phoneParts = client.phone.split(' ');
+    const code = phoneParts[0];
+    const rawNum = phoneParts.slice(1).join('').replace(/\D/g, '');
+    
+    setEditPhoneCountryCode(code);
+    setEditRawPhoneNum(rawNum);
+  };
+
+  const handleSaveEditClient = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!showEditModal) return;
+    if (!editFullName || !editUsername) return;
+
+    if (clients.some(c => c.id !== showEditModal.id && c.username.toLowerCase() === editUsername.toLowerCase())) {
+      showToastMsg(`L'identifiant @${editUsername} est déjà utilisé par un autre client.`, 'error');
+      return;
+    }
+
+    const activeCountry = countries.find(c => c.code === editPhoneCountryCode) || countries[0];
+    if (editRawPhoneNum.length !== activeCountry.length) {
+      showToastMsg(`Le numéro de téléphone pour le ${activeCountry.name} doit contenir exactement ${activeCountry.length} chiffres.`, 'error');
+      return;
+    }
+
+    let formattedPhoneNum = editRawPhoneNum;
+    if (editRawPhoneNum.length === 9) {
+      formattedPhoneNum = `${editRawPhoneNum.slice(0, 3)} ${editRawPhoneNum.slice(3, 5)} ${editRawPhoneNum.slice(5, 7)} ${editRawPhoneNum.slice(7, 9)}`;
+    } else if (editRawPhoneNum.length === 10) {
+      formattedPhoneNum = `${editRawPhoneNum.slice(0, 2)} ${editRawPhoneNum.slice(2, 4)} ${editRawPhoneNum.slice(4, 6)} ${editRawPhoneNum.slice(6, 8)} ${editRawPhoneNum.slice(8, 10)}`;
+    } else if (editRawPhoneNum.length === 8) {
+      formattedPhoneNum = `${editRawPhoneNum.slice(0, 2)} ${editRawPhoneNum.slice(2, 4)} ${editRawPhoneNum.slice(4, 6)} ${editRawPhoneNum.slice(6, 8)}`;
+    }
+
+    const fullPhone = `${editPhoneCountryCode} ${formattedPhoneNum}`;
+
+    setClients(clients.map(c => {
+      if (c.id === showEditModal.id) {
+        return {
+          ...c,
+          fullName: editFullName,
+          username: editUsername,
+          phone: fullPhone
+        };
+      }
+      return c;
+    }));
+
+    setShowEditModal(null);
+    showToastMsg(`Les informations du client @${editUsername} ont été mises à jour.`);
   };
 
   const handleCreateClient = (e: React.FormEvent) => {
@@ -330,6 +411,14 @@ export const CaissierClients: React.FC = () => {
                         {c.status === 'active' ? <UserMinus size={14} /> : <UserCheck size={14} />}
                       </button>
                       <button 
+                        onClick={() => handleStartEditClient(c)} 
+                        className="btn btn-secondary btn-icon" 
+                        title="Modifier les informations"
+                        style={{ color: 'var(--neutral-700)' }}
+                      >
+                        <Edit2 size={14} />
+                      </button>
+                      <button 
                         onClick={() => handleDeleteClient(c.id, c.username)} 
                         className="btn btn-secondary btn-icon" 
                         style={{ borderColor: 'var(--danger-100)', color: 'var(--danger-500)' }} 
@@ -380,7 +469,11 @@ export const CaissierClients: React.FC = () => {
                   className="input-field" 
                   placeholder="Ex: Arthur Mbe" 
                   value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setNewName(val);
+                    setNewUsername(generateUsername(val));
+                  }}
                   required 
                 />
               </div>
@@ -394,7 +487,7 @@ export const CaissierClients: React.FC = () => {
                     className="input-field" 
                     placeholder="gamer_pro" 
                     value={newUsername}
-                    onChange={(e) => setNewUsername(e.target.value.toLowerCase())}
+                    onChange={(e) => setNewUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
                     style={{ paddingLeft: '28px' }}
                     required 
                   />
@@ -438,6 +531,103 @@ export const CaissierClients: React.FC = () => {
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-4)' }}>
                 <button type="button" className="btn btn-secondary" onClick={() => setShowAddModal(false)}>Annuler</button>
+                <button type="submit" className="btn btn-black">Enregistrer</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Client Modal */}
+      {showEditModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          backgroundColor: 'rgba(20, 23, 34, 0.4)',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <div className="card animate-fade-in" style={{ width: '100%', maxWidth: '480px', padding: 'var(--space-8)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-6)' }}>
+              <h3 style={{ fontSize: 'var(--font-lg)', fontWeight: 700 }}>Modifier les informations du Client</h3>
+              <button className="btn btn-ghost" onClick={() => setShowEditModal(null)}>✕</button>
+            </div>
+
+            <form onSubmit={handleSaveEditClient} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+              <div className="input-group">
+                <label className="input-label">Nom complet</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  placeholder="Ex: Arthur Mbe" 
+                  value={editFullName}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setEditFullName(val);
+                    setEditUsername(generateUsername(val));
+                  }}
+                  required 
+                />
+              </div>
+
+              <div className="input-group">
+                <label className="input-label">Identifiant Unique (Username)</label>
+                <div style={{ position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--neutral-400)', fontWeight: 700 }}>@</span>
+                  <input 
+                    type="text" 
+                    className="input-field" 
+                    placeholder="gamer_pro" 
+                    value={editUsername}
+                    onChange={(e) => setEditUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                    style={{ paddingLeft: '28px' }}
+                    required 
+                  />
+                </div>
+              </div>
+
+              {/* Telephone Input with flag validation */}
+              <div className="input-group">
+                <label className="input-label">Numéro de Téléphone</label>
+                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                  <select 
+                    className="select-field"
+                    value={editPhoneCountryCode}
+                    onChange={(e) => {
+                      setEditPhoneCountryCode(e.target.value);
+                      setEditRawPhoneNum('');
+                    }}
+                    style={{ width: '130px', flexShrink: 0 }}
+                  >
+                    {countries.map(c => (
+                      <option key={c.code} value={c.code}>
+                        {c.flag} {c.code}
+                      </option>
+                    ))}
+                  </select>
+                  <input 
+                    type="text" 
+                    className={`input-field ${editRawPhoneNum && editRawPhoneNum.length < (countries.find(c => c.code === editPhoneCountryCode) || countries[0]).length ? 'input-error' : ''}`}
+                    placeholder={(countries.find(c => c.code === editPhoneCountryCode) || countries[0]).placeholder}
+                    value={editRawPhoneNum}
+                    onChange={(e) => handleEditPhoneInputChange(e.target.value)}
+                    required 
+                  />
+                </div>
+                {editRawPhoneNum && editRawPhoneNum.length < (countries.find(c => c.code === editPhoneCountryCode) || countries[0]).length && (
+                  <span className="input-error-text" style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                    <ShieldAlert size={12} /> Le numéro pour {(countries.find(c => c.code === editPhoneCountryCode) || countries[0]).name} doit comporter exactement {(countries.find(c => c.code === editPhoneCountryCode) || countries[0]).length} chiffres.
+                  </span>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-4)' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowEditModal(null)}>Annuler</button>
                 <button type="submit" className="btn btn-black">Enregistrer</button>
               </div>
             </form>

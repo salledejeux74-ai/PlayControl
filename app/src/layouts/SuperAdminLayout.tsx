@@ -73,6 +73,33 @@ export const SuperAdminLayout: React.FC = () => {
         left: 0,
         top: 0
       }} className="desktop-sidebar">
+        {/* Toggle Button on border */}
+        <button
+          onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+          className="btn btn-secondary btn-icon"
+          style={{
+            position: 'absolute',
+            right: '-14px',
+            top: '24px',
+            width: '28px',
+            height: '28px',
+            borderRadius: '50%',
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: 'var(--shadow-sm)',
+            border: '1px solid var(--neutral-200)',
+            backgroundColor: 'var(--neutral-0)',
+            cursor: 'pointer',
+            zIndex: 100,
+            transition: 'all 0.2s'
+          }}
+          title={isSidebarCollapsed ? "Agrandir le menu" : "Réduire le menu"}
+        >
+          {isSidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+        </button>
+
         {/* Sidebar Header */}
         <div style={{
           height: 'var(--topbar-height)',
@@ -96,16 +123,6 @@ export const SuperAdminLayout: React.FC = () => {
               </span>
             )}
           </div>
-          
-          {!isSidebarCollapsed && (
-            <button 
-              onClick={() => setIsSidebarCollapsed(true)} 
-              className="btn-ghost" 
-              style={{ padding: '4px', borderRadius: 'var(--radius-sm)' }}
-            >
-              <ChevronLeft size={18} />
-            </button>
-          )}
         </div>
 
         {/* Navigation links */}
@@ -121,8 +138,8 @@ export const SuperAdminLayout: React.FC = () => {
                 gap: 'var(--space-4)',
                 padding: 'var(--space-3) var(--space-4)',
                 borderRadius: 'var(--radius-md)',
-                color: isActive ? 'var(--primary-500)' : 'var(--neutral-600)',
-                backgroundColor: isActive ? 'var(--primary-50)' : 'transparent',
+                color: isActive ? 'var(--primary-50)' : 'var(--neutral-600)',
+                backgroundColor: isActive ? 'var(--primary-500)' : 'transparent',
                 fontWeight: isActive ? 600 : 500,
                 fontSize: 'var(--font-sm)',
                 transition: 'all var(--transition-fast)',
@@ -138,24 +155,21 @@ export const SuperAdminLayout: React.FC = () => {
 
         {/* Sidebar Footer */}
         <div style={{ padding: 'var(--space-4) var(--space-3)', borderTop: '1px solid var(--neutral-100)' }}>
-          {isSidebarCollapsed ? (
-            <button 
-              onClick={() => setIsSidebarCollapsed(false)}
-              className="btn btn-ghost"
-              style={{ width: '100%', justifyContent: 'center' }}
-            >
-              <ChevronRight size={20} />
-            </button>
-          ) : (
-            <button
-              onClick={handleLogout}
-              className="btn btn-ghost"
-              style={{ width: '100%', justifyContent: 'flex-start', color: 'var(--danger-500)', gap: 'var(--space-4)' }}
-            >
-              <LogOut size={20} />
-              <span>Déconnexion</span>
-            </button>
-          )}
+          <button
+            onClick={handleLogout}
+            className="btn btn-ghost"
+            style={{ 
+              width: '100%', 
+              justifyContent: isSidebarCollapsed ? 'center' : 'flex-start', 
+              color: 'var(--danger-500)', 
+              gap: 'var(--space-4)',
+              padding: isSidebarCollapsed ? 'var(--space-3) 0' : undefined 
+            }}
+            title="Déconnexion"
+          >
+            <LogOut size={20} />
+            {!isSidebarCollapsed && <span>Déconnexion</span>}
+          </button>
         </div>
       </aside>
 

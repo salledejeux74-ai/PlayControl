@@ -1,5 +1,14 @@
 import React, { useState } from 'react';
-import { Save, Database, ShieldAlert, Cloud, RefreshCw } from 'lucide-react';
+import { Save, Database, ShieldAlert, Cloud, RefreshCw, Landmark } from 'lucide-react';
+
+interface PendingSettingsUpdate {
+  status: 'pending' | 'approved' | 'rejected';
+  salleName: string;
+  salleAddress: string;
+  phoneCountryCode: string;
+  rawPhoneNum: string;
+  requestedAt: string;
+}
 
 export const SuperAdminSettings: React.FC = () => {
   const [passwordMinLength, setPasswordMinLength] = useState(8);
@@ -7,6 +16,54 @@ export const SuperAdminSettings: React.FC = () => {
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(true);
   const [backupSchedule, setBackupSchedule] = useState('daily');
   const [isSyncing, setIsSyncing] = useState(false);
+
+  const [pendingUpdate, setPendingUpdate] = useState<PendingSettingsUpdate | null>(() => {
+    const saved = localStorage.getItem('playcontrol_pending_settings_update');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.status === 'pending') return parsed;
+      } catch (e) {}
+    }
+    return null;
+  });
+
+  const handleApproveUpdate = () => {
+    if (!pendingUpdate) return;
+    
+    // Save to active settings
+    const activeSettings = {
+      salleName: pendingUpdate.salleName,
+      salleAddress: pendingUpdate.salleAddress,
+      phoneCountryCode: pendingUpdate.phoneCountryCode,
+      rawPhoneNum: pendingUpdate.rawPhoneNum
+    };
+    localStorage.setItem('playcontrol_active_settings', JSON.stringify(activeSettings));
+    
+    // Update pending status
+    const approvedRequest = {
+      ...pendingUpdate,
+      status: 'approved' as const
+    };
+    localStorage.setItem('playcontrol_pending_settings_update', JSON.stringify(approvedRequest));
+    
+    setPendingUpdate(null);
+    alert('Modification de profil de salle approuvée et appliquée avec succès !');
+  };
+
+  const handleRejectUpdate = () => {
+    if (!pendingUpdate) return;
+    
+    // Update pending status
+    const rejectedRequest = {
+      ...pendingUpdate,
+      status: 'rejected' as const
+    };
+    localStorage.setItem('playcontrol_pending_settings_update', JSON.stringify(rejectedRequest));
+    
+    setPendingUpdate(null);
+    alert('Modification de profil de salle rejetée.');
+  };
 
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,6 +91,57 @@ export const SuperAdminSettings: React.FC = () => {
           </p>
         </div>
       </div>
+
+      {pendingUpdate && (
+        <div className="card animate-fade-in" style={{ borderLeft: '4px solid var(--primary-500)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', padding: 'var(--space-6)', backgroundColor: 'var(--neutral-0)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+            <div style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: 'var(--radius-md)',
+              backgroundColor: 'var(--primary-50)',
+              color: 'var(--primary-500)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <Landmark size={18} />
+            </div>
+            <div>
+              <h3 style={{ fontSize: 'var(--font-base)', fontWeight: 700, color: 'var(--neutral-800)', margin: 0 }}>
+                Demande d'approbation : Profil de la Salle
+              </h3>
+              <p style={{ color: 'var(--neutral-400)', fontSize: 'var(--font-xs)', margin: 0 }}>
+                Le gérant de la salle a soumis une demande de mise à jour de ses coordonnées.
+              </p>
+            </div>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)', backgroundColor: 'var(--neutral-50)', padding: 'var(--space-4)', borderRadius: 'var(--radius-md)', border: '1px solid var(--neutral-100)', marginTop: 'var(--space-2)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <span style={{ fontSize: '10px', color: 'var(--neutral-400)', fontWeight: 600 }}>NOM COMMERCIAL</span>
+              <strong style={{ fontSize: 'var(--font-sm)', color: 'var(--neutral-800)' }}>{pendingUpdate.salleName}</strong>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <span style={{ fontSize: '10px', color: 'var(--neutral-400)', fontWeight: 600 }}>ADRESSE</span>
+              <strong style={{ fontSize: 'var(--font-sm)', color: 'var(--neutral-800)' }}>{pendingUpdate.salleAddress}</strong>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <span style={{ fontSize: '10px', color: 'var(--neutral-400)', fontWeight: 600 }}>TÉLÉPHONE DE CONTACT</span>
+              <strong style={{ fontSize: 'var(--font-sm)', color: 'var(--neutral-800)' }}>{pendingUpdate.phoneCountryCode} {pendingUpdate.rawPhoneNum}</strong>
+            </div>
+          </div>
+          
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={handleRejectUpdate} style={{ color: 'var(--danger-500)', borderColor: 'var(--danger-100)' }}>
+              Rejeter la demande
+            </button>
+            <button type="button" className="btn btn-black btn-sm" onClick={handleApproveUpdate}>
+              Valider et appliquer
+            </button>
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSaveSettings} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 'var(--space-6)' }} className="settings-grid">

@@ -1,19 +1,54 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Save, Database, ShieldAlert, Cpu, RefreshCw, Landmark } from 'lucide-react';
+import { Save, ShieldAlert, Landmark } from 'lucide-react';
+
+interface SalleSettings {
+  salleName: string;
+  salleAddress: string;
+  phoneCountryCode: string;
+  rawPhoneNum: string;
+}
+
+const DEFAULT_SETTINGS: SalleSettings = {
+  salleName: 'Zone Gaming Center',
+  salleAddress: 'Bastos, Yaoundé, Cameroun',
+  phoneCountryCode: '+237',
+  rawPhoneNum: '699999999'
+};
+
+const getActiveSettings = (): SalleSettings => {
+  const saved = localStorage.getItem('playcontrol_active_settings');
+  if (saved) {
+    try {
+      return JSON.parse(saved);
+    } catch (e) {}
+  }
+  return DEFAULT_SETTINGS;
+};
+
+interface PendingSettingsUpdate extends SalleSettings {
+  status: 'pending' | 'approved' | 'rejected';
+  requestedAt: string;
+}
+
+const getPendingUpdate = (): PendingSettingsUpdate | null => {
+  const saved = localStorage.getItem('playcontrol_pending_settings_update');
+  if (saved) {
+    try {
+      return JSON.parse(saved);
+    } catch (e) {}
+  }
+  return null;
+};
 
 export const AdminSettings: React.FC = () => {
-  const [salleName, setSalleName] = useState('Zone Gaming Center');
-  const [salleAddress, setSalleAddress] = useState('Bastos, Yaoundé, Cameroun');
-  const [phoneCountryCode, setPhoneCountryCode] = useState('+237');
-  const [rawPhoneNum, setRawPhoneNum] = useState('699999999');
+  const activeSettings = getActiveSettings();
+  const [salleName, setSalleName] = useState(activeSettings.salleName);
+  const [salleAddress, setSalleAddress] = useState(activeSettings.salleAddress);
+  const [phoneCountryCode, setPhoneCountryCode] = useState(activeSettings.phoneCountryCode);
+  const [rawPhoneNum, setRawPhoneNum] = useState(activeSettings.rawPhoneNum);
 
-  const [sessionTimeout, setSessionTimeout] = useState(15);
-  const [smartPlugAutoCut, setSmartPlugAutoCut] = useState(true);
-  const [smartPlugRange, setSmartPlugRange] = useState('192.168.1.100-200');
-
-  const [isBackupRunning, setIsBackupRunning] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [pendingUpdate, setPendingUpdate] = useState<PendingSettingsUpdate | null>(getPendingUpdate());
 
   // Country selection for validation
   const countries = [
@@ -69,33 +104,27 @@ export const AdminSettings: React.FC = () => {
     }
 
     openConfirm(
-      "Enregistrer les configurations",
-      "Voulez-vous enregistrer les modifications de profil et de réseau local de votre salle ?",
+      "Soumettre les modifications",
+      "Les modifications apportées au profil de la salle doivent être validées par le Super Administrateur. Soumettre la demande ?",
       () => {
-        showToastMsg("Paramètres de la salle enregistrés localement avec succès.");
+        const updateRequest: PendingSettingsUpdate = {
+          status: 'pending',
+          salleName,
+          salleAddress,
+          phoneCountryCode,
+          rawPhoneNum,
+          requestedAt: new Date().toISOString()
+        };
+        localStorage.setItem('playcontrol_pending_settings_update', JSON.stringify(updateRequest));
+        setPendingUpdate(updateRequest);
+        showToastMsg("Demande de modification soumise au Super Administrateur.");
       },
       'info'
     );
   };
 
-  const handleTriggerBackup = () => {
-    setIsBackupRunning(true);
-    setTimeout(() => {
-      setIsBackupRunning(false);
-      showToastMsg("Sauvegarde SQLite locale enregistrée (backup_playcontrol_local.db).");
-    }, 1500);
-  };
-
-  const handleTriggerCloudSync = () => {
-    setIsSyncing(true);
-    setTimeout(() => {
-      setIsSyncing(false);
-      showToastMsg("Synchronisation avec Supabase Cloud réussie !");
-    }, 2000);
-  };
-
   return (
-    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', maxWidth: '650px', margin: '0 auto', width: '100%' }}>
       
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -104,238 +133,184 @@ export const AdminSettings: React.FC = () => {
             Paramètres de la Salle
           </h2>
           <p style={{ color: 'var(--neutral-500)', fontSize: 'var(--font-sm)' }}>
-            Configurez les coordonnées de la salle, les prises connectées locales et les sauvegardes SQLite.
+            Configurez les coordonnées de la salle (soumis à validation du Super Administrateur).
           </p>
         </div>
       </div>
 
+      {pendingUpdate && pendingUpdate.status === 'pending' && (
+        <div style={{
+          backgroundColor: '#fffbeb',
+          border: '1px solid #f59e0b',
+          borderRadius: 'var(--radius-lg)',
+          padding: 'var(--space-4) var(--space-5)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '4px',
+          color: '#b45309'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: 'var(--font-sm)' }}>
+            <span style={{ display: 'inline-block', width: '8px', height: '8px', backgroundColor: '#f59e0b', borderRadius: '50%' }}></span>
+            Demande de modification en attente de validation
+          </div>
+          <p style={{ fontSize: 'var(--font-xs)', color: '#d97706', margin: 0, lineHeight: 1.4 }}>
+            Vous avez soumis des modifications (Nom : "{pendingUpdate.salleName}", Adresse : "{pendingUpdate.salleAddress}"). Elles seront actives dès qu'elles auront été approuvées par le Super Administrateur.
+          </p>
+        </div>
+      )}
+
+      {pendingUpdate && pendingUpdate.status === 'rejected' && (
+        <div style={{
+          backgroundColor: '#fef2f2',
+          border: '1px solid #ef4444',
+          borderRadius: 'var(--radius-lg)',
+          padding: 'var(--space-4) var(--space-5)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          color: '#b91c1c'
+        }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: 'var(--font-sm)' }}>
+              <span style={{ display: 'inline-block', width: '8px', height: '8px', backgroundColor: '#ef4444', borderRadius: '50%' }}></span>
+              Demande de modification refusée
+            </div>
+            <p style={{ fontSize: 'var(--font-xs)', color: '#dc2626', margin: 0 }}>
+              Votre dernière demande de modification de profil a été rejetée par le Super Administrateur.
+            </p>
+          </div>
+          <button 
+            type="button" 
+            className="btn btn-secondary btn-sm" 
+            onClick={() => {
+              localStorage.removeItem('playcontrol_pending_settings_update');
+              setPendingUpdate(null);
+            }}
+            style={{ padding: '4px 10px', fontSize: 'var(--font-xs)', color: '#dc2626', borderColor: '#fee2e2' }}
+          >
+            Masquer
+          </button>
+        </div>
+      )}
+
+      {pendingUpdate && pendingUpdate.status === 'approved' && (
+        <div style={{
+          backgroundColor: '#f0fdf4',
+          border: '1px solid #22c55e',
+          borderRadius: 'var(--radius-lg)',
+          padding: 'var(--space-4) var(--space-5)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          color: '#15803d'
+        }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: 'var(--font-sm)' }}>
+              <span style={{ display: 'inline-block', width: '8px', height: '8px', backgroundColor: '#22c55e', borderRadius: '50%' }}></span>
+              Modifications approuvées et appliquées !
+            </div>
+            <p style={{ fontSize: 'var(--font-xs)', color: '#16a34a', margin: 0 }}>
+              Le Super Administrateur a validé vos modifications de profil. Elles sont maintenant appliquées.
+            </p>
+          </div>
+          <button 
+            type="button" 
+            className="btn btn-secondary btn-sm" 
+            onClick={() => {
+              localStorage.removeItem('playcontrol_pending_settings_update');
+              setPendingUpdate(null);
+            }}
+            style={{ padding: '4px 10px', fontSize: 'var(--font-xs)', color: '#16a34a', borderColor: '#dcfce7' }}
+          >
+            Fermer
+          </button>
+        </div>
+      )}
+
       <form onSubmit={handleSaveSettings} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
         
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 'var(--space-6)' }} className="settings-grid">
-          
-          {/* Left Column: Salle Profile & Network */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
-            
-            {/* Profile Card */}
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-2)' }}>
-                <div style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: 'var(--radius-md)',
-                  backgroundColor: 'var(--primary-50)',
-                  color: 'var(--primary-500)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <Landmark size={18} />
-                </div>
-                <h3 style={{ fontSize: 'var(--font-base)', fontWeight: 700, color: 'var(--neutral-800)' }}>
-                  Profil & Contact de la Salle
-                </h3>
-              </div>
-
-              <div className="input-group">
-                <label className="input-label">Nom commercial de la salle</label>
-                <input 
-                  type="text" 
-                  className="input-field" 
-                  value={salleName} 
-                  onChange={(e) => setSalleName(e.target.value)}
-                  required 
-                />
-              </div>
-
-              <div className="input-group">
-                <label className="input-label">Adresse de la salle (Geocodage local)</label>
-                <input 
-                  type="text" 
-                  className="input-field" 
-                  value={salleAddress} 
-                  onChange={(e) => setSalleAddress(e.target.value)}
-                  required 
-                />
-              </div>
-
-              {/* Telephone input validation */}
-              <div className="input-group">
-                <label className="input-label">Numéro de Téléphone</label>
-                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                  <select 
-                    className="select-field"
-                    value={phoneCountryCode}
-                    onChange={(e) => {
-                      setPhoneCountryCode(e.target.value);
-                      setRawPhoneNum('');
-                    }}
-                    style={{ width: '130px', flexShrink: 0 }}
-                  >
-                    {countries.map(c => (
-                      <option key={c.code} value={c.code}>
-                        {c.flag} {c.code}
-                      </option>
-                    ))}
-                  </select>
-                  <input 
-                    type="text" 
-                    className={`input-field ${rawPhoneNum && rawPhoneNum.length < activeCountry.length ? 'input-error' : ''}`}
-                    placeholder={activeCountry.placeholder}
-                    value={rawPhoneNum}
-                    onChange={(e) => handlePhoneInputChange(e.target.value)}
-                    required 
-                  />
-                </div>
-                {rawPhoneNum && rawPhoneNum.length < activeCountry.length && (
-                  <span className="input-error-text" style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-                    <ShieldAlert size={12} /> Le numéro pour le {activeCountry.name} doit comporter exactement {activeCountry.length} chiffres.
-                  </span>
-                )}
-              </div>
+        {/* Profile Card */}
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-2)' }}>
+            <div style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: 'var(--radius-md)',
+              backgroundColor: 'var(--primary-50)',
+              color: 'var(--primary-500)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <Landmark size={18} />
             </div>
-
-            {/* Smart Plugs LAN Card */}
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-2)' }}>
-                <div style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: 'var(--radius-md)',
-                  backgroundColor: 'var(--accent-50)',
-                  color: 'var(--accent-500)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <Cpu size={18} />
-                </div>
-                <h3 style={{ fontSize: 'var(--font-base)', fontWeight: 700, color: 'var(--neutral-800)' }}>
-                  Prises Connectées (Smart Plugs LAN)
-                </h3>
-              </div>
-
-              <div className="input-group">
-                <label className="input-label">Plage d'adresses IP Smart Plugs sur le réseau local</label>
-                <input 
-                  type="text" 
-                  className="input-field" 
-                  value={smartPlugRange} 
-                  onChange={(e) => setSmartPlugRange(e.target.value)}
-                  placeholder="Ex: 192.168.1.100-200"
-                  required 
-                />
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
-                <input 
-                  id="smartplug-autocut"
-                  type="checkbox" 
-                  checked={smartPlugAutoCut}
-                  onChange={(e) => setSmartPlugAutoCut(e.target.checked)}
-                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                />
-                <label htmlFor="smartplug-autocut" style={{ fontSize: 'var(--font-sm)', fontWeight: 600, color: 'var(--neutral-700)', cursor: 'pointer' }}>
-                  Couper le courant automatiquement en fin de session
-                </label>
-              </div>
-              <p style={{ fontSize: '10px', color: 'var(--neutral-400)', lineHeight: 1.4 }}>
-                Éteint l'écran de la console ou du PC après expiration du compte à rebours pour empêcher le jeu gratuit.
-              </p>
-            </div>
-
+            <h3 style={{ fontSize: 'var(--font-base)', fontWeight: 700, color: 'var(--neutral-800)' }}>
+              Profil & Contact de la Salle
+            </h3>
           </div>
 
-          {/* Right Column: Database backup, timeout security */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
-            
-            {/* Database SQLite Local-first */}
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-2)' }}>
-                <div style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: 'var(--radius-md)',
-                  backgroundColor: 'var(--primary-50)',
-                  color: 'var(--primary-500)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <Database size={18} />
-                </div>
-                <h3 style={{ fontSize: 'var(--font-base)', fontWeight: 700, color: 'var(--neutral-800)' }}>
-                  Base de données locale & Cloud
-                </h3>
-              </div>
-
-              <p style={{ fontSize: 'var(--font-xs)', color: 'var(--neutral-500)', lineHeight: 1.5 }}>
-                PlayControl utilise une architecture Local-First. Toutes les données sont enregistrées en local dans une base SQLite puis synchronisées avec Supabase Cloud.
-              </p>
-
-              <button 
-                type="button" 
-                onClick={handleTriggerBackup}
-                className="btn btn-secondary" 
-                style={{ gap: 'var(--space-2)', justifyContent: 'center' }}
-                disabled={isBackupRunning}
-              >
-                <Database size={14} className={isBackupRunning ? 'animate-spin' : ''} />
-                {isBackupRunning ? 'Sauvegarde...' : 'Effectuer un backup local'}
-              </button>
-
-              <button 
-                type="button" 
-                onClick={handleTriggerCloudSync}
-                className="btn btn-secondary" 
-                style={{ gap: 'var(--space-2)', justifyContent: 'center' }}
-                disabled={isSyncing}
-              >
-                <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
-                {isSyncing ? 'Synchronisation...' : 'Forcer la synchro cloud'}
-              </button>
-            </div>
-
-            {/* Security settings card */}
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-2)' }}>
-                <div style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: 'var(--radius-md)',
-                  backgroundColor: 'var(--danger-50)',
-                  color: 'var(--danger-600)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <ShieldAlert size={18} />
-                </div>
-                <h3 style={{ fontSize: 'var(--font-base)', fontWeight: 700, color: 'var(--neutral-800)' }}>
-                  Sécurité de la Caisse
-                </h3>
-              </div>
-
-              <div className="input-group">
-                <label className="input-label">Déconnexion automatique de la caisse par inactivité (minutes)</label>
-                <input 
-                  type="number" 
-                  className="input-field" 
-                  value={sessionTimeout} 
-                  onChange={(e) => setSessionTimeout(Number(e.target.value))}
-                  min={5}
-                  max={60}
-                />
-              </div>
-            </div>
-
+          <div className="input-group">
+            <label className="input-label">Nom commercial de la salle</label>
+            <input 
+              type="text" 
+              className="input-field" 
+              value={salleName} 
+              onChange={(e) => setSalleName(e.target.value)}
+              required 
+            />
           </div>
 
+          <div className="input-group">
+            <label className="input-label">Adresse de la salle (Geocodage local)</label>
+            <input 
+              type="text" 
+              className="input-field" 
+              value={salleAddress} 
+              onChange={(e) => setSalleAddress(e.target.value)}
+              required 
+            />
+          </div>
+
+          {/* Telephone input validation */}
+          <div className="input-group">
+            <label className="input-label">Numéro de Téléphone</label>
+            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+              <select 
+                className="select-field"
+                value={phoneCountryCode}
+                onChange={(e) => {
+                  setPhoneCountryCode(e.target.value);
+                  setRawPhoneNum('');
+                }}
+                style={{ width: '130px', flexShrink: 0 }}
+              >
+                {countries.map(c => (
+                  <option key={c.code} value={c.code}>
+                    {c.flag} {c.code}
+                  </option>
+                ))}
+              </select>
+              <input 
+                type="text" 
+                className={`input-field ${rawPhoneNum && rawPhoneNum.length < activeCountry.length ? 'input-error' : ''}`}
+                placeholder={activeCountry.placeholder}
+                value={rawPhoneNum}
+                onChange={(e) => handlePhoneInputChange(e.target.value)}
+                required 
+              />
+            </div>
+            {rawPhoneNum && rawPhoneNum.length < activeCountry.length && (
+              <span className="input-error-text" style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                <ShieldAlert size={12} /> Le numéro pour le {activeCountry.name} doit comporter exactement {activeCountry.length} chiffres.
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Save footer */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--neutral-200)', paddingTop: 'var(--space-4)' }}>
-          <button type="submit" className="btn btn-black" style={{ gap: 'var(--space-2)', width: '180px' }}>
-            <Save size={18} /> Enregistrer
+          <button type="submit" className="btn btn-black" style={{ gap: 'var(--space-2)', width: '180px' }} disabled={pendingUpdate?.status === 'pending'}>
+            <Save size={18} /> Soumettre
           </button>
         </div>
 
@@ -410,13 +385,6 @@ export const AdminSettings: React.FC = () => {
         document.body
       )}
 
-      <style>{`
-        @media (max-width: 992px) {
-          .settings-grid {
-            grid-template-columns: 1fr !important;
-          }
-        }
-      `}</style>
     </div>
   );
 };
