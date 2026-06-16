@@ -20,9 +20,9 @@ interface AbonnementPackage {
 }
 
 const DEFAULT_MATERIAL_TYPES: HourlyRate[] = [
-  { id: '1', type: 'console', label: 'Console PS5 (Standard & VIP)', price: 1200, durationMinutes: 60 },
-  { id: '2', type: 'pc', label: 'PC Gamer RTX (Gaming Zone)', price: 800, durationMinutes: 60 },
-  { id: '3', type: 'vr', label: 'VR Headset (Meta Quest & HTC Vive)', price: 2500, durationMinutes: 60 },
+  { id: '1', type: 'ps5_vip', label: 'Console PS5 (Zone VIP)', price: 1500, durationMinutes: 60 },
+  { id: '2', type: 'ps5_standard', label: 'Console PS5 (Zone Standard)', price: 1000, durationMinutes: 60 },
+  { id: '3', type: 'ps4_standard', label: 'Console PS4 (Zone Standard)', price: 800, durationMinutes: 60 },
 ];
 
 const getMaterialTypes = (): HourlyRate[] => {
@@ -43,9 +43,9 @@ const saveMaterialTypes = (types: HourlyRate[]) => {
 
 const DEFAULT_PACKAGES: AbonnementPackage[] = [
   { id: '1', name: 'Pass Journalier', price: 1500, durationHours: 2, validityDays: 1, description: 'Accès libre à tous les postes pendant 2 heures de jeu dans la journée.' },
-  { id: '2', name: 'Pass Hebdomadaire', price: 5000, durationHours: 8, validityDays: 7, description: '8 heures de crédit de jeu valables pendant 7 jours sur console et PC.' },
+  { id: '2', name: 'Pass Hebdomadaire', price: 5000, durationHours: 8, validityDays: 7, description: '8 heures de crédit de jeu valables pendant 7 jours sur toutes les consoles.' },
   { id: '3', name: 'Pass Mensuel', price: 15000, durationHours: 25, validityDays: 30, description: '25 heures de crédit de jeu valables pendant 30 jours.' },
-  { id: '4', name: 'Pass VIP Gold', price: 25000, durationHours: 50, validityDays: 30, description: '50 heures de crédit de jeu sur tous les postes, VR incluse.' },
+  { id: '4', name: 'Pass VIP Gold', price: 25000, durationHours: 50, validityDays: 30, description: '50 heures de crédit de jeu sur toutes les consoles, zone VIP incluse.' },
 ];
 
 const getAbonnementPackages = (): AbonnementPackage[] => {

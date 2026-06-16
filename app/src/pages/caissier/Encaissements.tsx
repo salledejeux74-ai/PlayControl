@@ -17,7 +17,10 @@ export const CaissierEncaissements: React.FC = () => {
   const { logout } = useAuth();
   const navigate = useNavigate();
 
-  const [initialCash] = useState<number>(50000); // 50 000 FCFA initial cash drawer
+  const [initialCash] = useState<number>(() => {
+    const saved = localStorage.getItem('playcontrol_shift_initial_cash');
+    return saved ? Number(saved) : 50000;
+  });
   const [transactions] = useState<Transaction[]>([
     { id: '1', time: '14:30', clientName: 'Invité_PS5_1', type: 'session', amount: 1200, paymentMethod: 'Espèces' },
     { id: '2', time: '13:15', clientName: 'Marc_K', type: 'recharge', amount: 5000, paymentMethod: 'Mobile Money' },
@@ -57,6 +60,10 @@ export const CaissierEncaissements: React.FC = () => {
   const handleCloseShiftConfirm = (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Reset shift status in localStorage
+    localStorage.setItem('playcontrol_shift_active', 'false');
+    localStorage.removeItem('playcontrol_shift_initial_cash');
+
     // Simulate closure printing receipt
     showToastMsg("Shift clôturé avec succès. Impression du reçu de caisse...");
     

@@ -13,6 +13,20 @@ export const CaissierLayout: React.FC = () => {
   const navigate = useNavigate();
   const [showNotifications, setShowNotifications] = useState(false);
 
+  const [isShiftActive, setIsShiftActive] = useState<boolean>(() => {
+    return localStorage.getItem('playcontrol_shift_active') === 'true';
+  });
+  const [initialCashInput, setInitialCashInput] = useState<string>('50000');
+
+  const handleOpenShift = (e: React.FormEvent) => {
+    e.preventDefault();
+    const val = Number(initialCashInput);
+    if (isNaN(val) || val < 0) return;
+    localStorage.setItem('playcontrol_shift_active', 'true');
+    localStorage.setItem('playcontrol_shift_initial_cash', String(val));
+    setIsShiftActive(true);
+  };
+
   // Route protection
   React.useEffect(() => {
     if (!user) {
@@ -83,31 +97,33 @@ export const CaissierLayout: React.FC = () => {
         </div>
 
         {/* Center Navigation Links (Tabs style for cashier ease of use) */}
-        <nav style={{ display: 'flex', gap: 'var(--space-2)' }} className="cashier-nav">
-          {navLinks.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === '/caissier'}
-              style={({ isActive }) => ({
-                display: 'flex',
-                alignItems: 'center',
-                gap: 'var(--space-2)',
-                padding: 'var(--space-2) var(--space-4)',
-                borderRadius: 'var(--radius-md)',
-                color: isActive ? 'var(--primary-500)' : 'var(--neutral-600)',
-                backgroundColor: isActive ? 'var(--primary-50)' : 'transparent',
-                fontWeight: 600,
-                fontSize: 'var(--font-sm)',
-                transition: 'all var(--transition-fast)',
-                border: `1px solid ${isActive ? 'var(--primary-100)' : 'transparent'}`
-              })}
-            >
-              {item.icon}
-              <span>{item.label}</span>
-            </NavLink>
-          ))}
-        </nav>
+        {isShiftActive && (
+          <nav style={{ display: 'flex', gap: 'var(--space-2)' }} className="cashier-nav">
+            {navLinks.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.to === '/caissier'}
+                style={({ isActive }) => ({
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 'var(--space-2)',
+                  padding: 'var(--space-2) var(--space-4)',
+                  borderRadius: 'var(--radius-md)',
+                  color: isActive ? 'var(--primary-500)' : 'var(--neutral-600)',
+                  backgroundColor: isActive ? 'var(--primary-50)' : 'transparent',
+                  fontWeight: 600,
+                  fontSize: 'var(--font-sm)',
+                  transition: 'all var(--transition-fast)',
+                  border: `1px solid ${isActive ? 'var(--primary-100)' : 'transparent'}`
+                })}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </NavLink>
+            ))}
+          </nav>
+        )}
 
         {/* Right Actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
@@ -216,8 +232,92 @@ export const CaissierLayout: React.FC = () => {
       </header>
 
       {/* Main Content Pane */}
-      <main style={{ flex: 1, padding: 'var(--space-6) var(--space-6) var(--space-12)' }}>
-        <Outlet />
+      <main style={{ flex: 1, padding: 'var(--space-6) var(--space-6) var(--space-12)', display: 'flex', flexDirection: 'column' }}>
+        {isShiftActive ? (
+          <Outlet />
+        ) : (
+          <div style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 'var(--space-6) 0'
+          }}>
+            <div className="card animate-fade-in" style={{
+              width: '100%',
+              maxWidth: '460px',
+              padding: 'var(--space-8)',
+              borderTop: '5px solid var(--primary-500)',
+              boxShadow: 'var(--shadow-lg)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 'var(--space-6)'
+            }}>
+              <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                <div style={{
+                  width: '56px',
+                  height: '56px',
+                  backgroundColor: 'var(--primary-50)',
+                  color: 'var(--primary-600)',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto var(--space-2)'
+                }}>
+                  <Wallet size={28} />
+                </div>
+                <h3 style={{ fontSize: 'var(--font-lg)', fontWeight: 800, color: 'var(--neutral-800)', margin: 0 }}>
+                  Ouverture de la Caisse
+                </h3>
+                <p style={{ fontSize: 'var(--font-sm)', color: 'var(--neutral-500)', margin: 0, lineHeight: 1.5 }}>
+                  Veuillez vérifier et saisir le montant du fonds de caisse initial présent physiquement dans le tiroir-caisse pour démarrer votre shift.
+                </p>
+              </div>
+
+              <form onSubmit={handleOpenShift} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
+                <div className="input-group" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                  <label className="input-label" style={{ fontWeight: 700 }}>
+                    Fonds de Caisse Initial (FCFA)
+                  </label>
+                  <input
+                    type="number"
+                    className="input-field"
+                    value={initialCashInput}
+                    onChange={(e) => setInitialCashInput(e.target.value)}
+                    placeholder="50000"
+                    min={0}
+                    required
+                    style={{
+                      height: '46px',
+                      fontSize: 'var(--font-lg)',
+                      fontWeight: 700,
+                      textAlign: 'center',
+                      letterSpacing: '1px'
+                    }}
+                  />
+                  <span className="input-hint" style={{ textAlign: 'center' }}>
+                    Ce montant servira de référence pour le calcul des écarts lors de la clôture.
+                  </span>
+                </div>
+
+                <button
+                  type="submit"
+                  className="btn btn-black"
+                  style={{
+                    height: '46px',
+                    justifyContent: 'center',
+                    gap: 'var(--space-2)',
+                    fontSize: 'var(--font-base)',
+                    fontWeight: 700
+                  }}
+                >
+                  Démarrer la caisse et le shift
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
       </main>
 
       <style>{`

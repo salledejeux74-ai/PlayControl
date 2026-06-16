@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { 
-  Gamepad2, Monitor, HelpCircle, Plus, Search, 
+  Gamepad2, Plus, Search, 
   Trash2, Play, Ban, ArrowRightLeft, Clock, Edit2
 } from 'lucide-react';
 
@@ -26,10 +26,129 @@ interface MaterialType {
 }
 
 const DEFAULT_MATERIAL_TYPES: MaterialType[] = [
-  { id: '1', type: 'console', label: 'Console PS5 (Standard & VIP)', price: 1200, durationMinutes: 60 },
-  { id: '2', type: 'pc', label: 'PC Gamer RTX (Gaming Zone)', price: 800, durationMinutes: 60 },
-  { id: '3', type: 'vr', label: 'VR Headset (Meta Quest & HTC Vive)', price: 2500, durationMinutes: 60 },
+  { id: '1', type: 'ps5_vip', label: 'Console PS5 (Zone VIP)', price: 1500, durationMinutes: 60 },
+  { id: '2', type: 'ps5_standard', label: 'Console PS5 (Zone Standard)', price: 1000, durationMinutes: 60 },
+  { id: '3', type: 'ps4_standard', label: 'Console PS4 (Zone Standard)', price: 800, durationMinutes: 60 },
 ];
+
+const formatRemainingTime = (minutes: number): string => {
+  if (minutes < 0) return '0 min';
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours > 0) {
+    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  }
+  return `${mins} min`;
+};
+
+const formatPriceTag = (typeKey: string, materialTypes: MaterialType[]): string => {
+  const mType = materialTypes.find(t => t.type === typeKey);
+  if (!mType) return '';
+  if (mType.durationMinutes === 60) {
+    return `${mType.price} FCFA / h`;
+  }
+  return `${mType.price} FCFA / ${mType.durationMinutes} min`;
+};
+
+const printReceipt = (post: GameStation, materialTypes: MaterialType[]) => {
+  const ticketWindow = window.open('', '_blank', 'width=350,height=600');
+  if (!ticketWindow) {
+    alert("Veuillez autoriser les fenêtres pop-up pour imprimer la facture.");
+    return;
+  }
+
+  const dateStr = new Date().toLocaleString('fr-FR');
+  const durationText = post.totalDuration ? `${post.totalDuration} min` : 'N/A';
+  
+  const mType = materialTypes.find(t => t.type === post.type);
+  const rate = mType ? mType.price : 1000;
+  const rateDuration = mType ? mType.durationMinutes : 60;
+  const playedMins = post.totalDuration || 60;
+  const cost = Math.ceil((rate / rateDuration) * playedMins);
+
+  ticketWindow.document.write(`
+    <html>
+      <head>
+        <title>Facture de Session - PlayControl</title>
+        <style>
+          body {
+            font-family: 'Courier New', Courier, monospace;
+            width: 80mm;
+            padding: 15px;
+            margin: 0;
+            font-size: 13px;
+            color: #000;
+          }
+          .text-center { text-align: center; }
+          .header { margin-bottom: 15px; border-bottom: 1px dashed #000; padding-bottom: 10px; }
+          .title { font-size: 18px; font-weight: bold; margin: 5px 0; }
+          .info { margin-bottom: 15px; font-size: 12px; line-height: 1.4; }
+          .table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+          .table th, .table td { text-align: left; padding: 6px 0; }
+          .table th { border-bottom: 1px solid #000; }
+          .total { font-size: 15px; font-weight: bold; border-top: 2px dashed #000; border-bottom: 2px dashed #000; padding: 8px 0; margin-top: 10px; display: flex; justify-content: space-between; }
+          .footer { margin-top: 25px; border-top: 1px dashed #000; padding-top: 10px; font-size: 11px; }
+        </style>
+      </head>
+      <body>
+        <div class="header text-center">
+          <div class="title">PLAYCONTROL</div>
+          <div>SALLE DE JEUX VIP</div>
+          <div style="font-size: 11px; margin-top: 2px;">Douala, Cameroun</div>
+        </div>
+
+        <div class="info">
+          <div><strong>Date:</strong> ${dateStr}</div>
+          <div><strong>Poste:</strong> ${post.name}</div>
+          <div><strong>Joueur:</strong> ${post.clientName || 'Invité'}</div>
+        </div>
+
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Description</th>
+              <th style="text-align: right;">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Session ${durationText}<br/>(${mType?.label || post.type})</td>
+              <td style="text-align: right; vertical-align: top;">${cost.toLocaleString()} FCFA</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="total">
+          <span>TOTAL:</span>
+          <span>${cost.toLocaleString()} FCFA</span>
+        </div>
+
+        <div style="margin-top: 10px; font-size: 12px;">
+          <strong>Mode de Paiement:</strong> Cash / Espèces
+        </div>
+
+        <div class="footer text-center">
+          <div>Merci pour votre visite et à bientôt !</div>
+          <div style="margin-top: 4px; font-weight: bold;">JEU SUPRÊME, SENSATION UNIQUE</div>
+          <div style="margin-top: 10px; font-size: 9px; opacity: 0.8;">PlayControl System</div>
+        </div>
+
+        <script>
+          window.onload = function() {
+            window.print();
+            window.onafterprint = function() {
+              window.close();
+            };
+            setTimeout(function() {
+              window.close();
+            }, 1000);
+          }
+        </script>
+      </body>
+    </html>
+  `);
+  ticketWindow.document.close();
+};
 
 const getMaterialTypes = (): MaterialType[] => {
   const saved = localStorage.getItem('playcontrol_material_types');
@@ -55,14 +174,14 @@ interface MockClient {
 
 export const AdminPostes: React.FC = () => {
   const [postes, setPostes] = useState<GameStation[]>([
-    { id: '1', name: 'PS5 - VIP #1', type: 'console', characteristics: 'Écran 4K 120Hz, Manette DualSense Edge', smartPlugIp: '192.168.1.101', status: 'occupe', clientName: 'Gamer_Pro', minutesRemaining: 45, totalDuration: 120 },
-    { id: '2', name: 'PS5 - Standard #2', type: 'console', characteristics: 'Écran 1080p, Manette standard', smartPlugIp: '192.168.1.102', status: 'libre' },
-    { id: '3', name: 'PS5 - Standard #3', type: 'console', characteristics: 'Écran 1080p, Manette standard', smartPlugIp: '192.168.1.103', status: 'hors-service' },
-    { id: '4', name: 'PC Gamer RTX #1', type: 'pc', characteristics: 'RTX 4080, Core i7, 32GB RAM, 240Hz', smartPlugIp: '192.168.1.201', status: 'occupe', clientName: 'Marc_K', minutesRemaining: 120, totalDuration: 180 },
-    { id: '5', name: 'PC Gamer RTX #2', type: 'pc', characteristics: 'RTX 4070, Core i5, 16GB RAM, 144Hz', smartPlugIp: '192.168.1.202', status: 'libre' },
-    { id: '6', name: 'PC Gamer RTX #3', type: 'pc', characteristics: 'RTX 4070, Core i5, 16GB RAM, 144Hz', smartPlugIp: '192.168.1.203', status: 'libre' },
-    { id: '7', name: 'VR HTC Vive #1', type: 'vr', characteristics: 'HTC Vive Pro 2, Espace de jeu 3x3m', smartPlugIp: '192.168.1.301', status: 'occupe', clientName: 'Alain_T', minutesRemaining: 15, totalDuration: 60 },
-    { id: '8', name: 'VR Meta Quest #2', type: 'vr', characteristics: 'Meta Quest 3, Liaison PC sans-fil', smartPlugIp: '192.168.1.302', status: 'libre' },
+    { id: '1', name: 'PS5 - VIP #1', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Manette DualSense Edge', smartPlugIp: '192.168.1.101', status: 'occupe', clientName: 'Gamer_Pro', minutesRemaining: 45, totalDuration: 120 },
+    { id: '2', name: 'PS5 - Standard #2', type: 'ps5_standard', characteristics: 'Écran 1080p, Manette standard', smartPlugIp: '192.168.1.102', status: 'libre' },
+    { id: '3', name: 'PS5 - Standard #3', type: 'ps5_standard', characteristics: 'Écran 1080p, Manette standard', smartPlugIp: '192.168.1.103', status: 'hors-service' },
+    { id: '4', name: 'PS5 - VIP #2', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Canapé Confort VIP', smartPlugIp: '192.168.1.104', status: 'occupe', clientName: 'Marc_K', minutesRemaining: 120, totalDuration: 180 },
+    { id: '5', name: 'PS4 - Standard #1', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.105', status: 'libre' },
+    { id: '6', name: 'PS4 - Standard #2', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.106', status: 'libre' },
+    { id: '7', name: 'PS5 - VIP #3', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Canapé Confort VIP', smartPlugIp: '192.168.1.107', status: 'occupe', clientName: 'Alain_T', minutesRemaining: 15, totalDuration: 60 },
+    { id: '8', name: 'PS4 - Standard #3', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.108', status: 'libre' },
   ]);
 
   const mockClients: MockClient[] = [
@@ -135,8 +254,14 @@ export const AdminPostes: React.FC = () => {
   // Live Timer Effect
   useEffect(() => {
     const interval = setInterval(() => {
-      setPostes(prevPostes => 
-        prevPostes.map(post => {
+      const currentMaterialTypes = getMaterialTypes();
+      setPostes(prevPostes => {
+        prevPostes.forEach(post => {
+          if (post.status === 'occupe' && post.minutesRemaining !== undefined && post.minutesRemaining <= 1) {
+            printReceipt(post, currentMaterialTypes);
+          }
+        });
+        return prevPostes.map(post => {
           if (post.status === 'occupe' && post.minutesRemaining !== undefined) {
             if (post.minutesRemaining <= 1) {
               // Time's up! Return to libre
@@ -146,8 +271,8 @@ export const AdminPostes: React.FC = () => {
             return { ...post, minutesRemaining: post.minutesRemaining - 1 };
           }
           return post;
-        })
-      );
+        });
+      });
     }, 60000); // Update every minute
     return () => clearInterval(interval);
   }, []);
@@ -271,8 +396,10 @@ export const AdminPostes: React.FC = () => {
       const targetClient = mockClients.find(c => c.username === selectedClient);
       if (!targetClient) return;
 
-      const ratePerHour = showLaunchModal.type === 'console' ? 1200 : showLaunchModal.type === 'pc' ? 800 : 2500;
-      const cost = Math.ceil((ratePerHour / 60) * duration);
+      const targetType = materialTypes.find(t => t.type === showLaunchModal.type);
+      const rate = targetType ? targetType.price : 1000;
+      const rateDuration = targetType ? targetType.durationMinutes : 60;
+      const cost = Math.ceil((rate / rateDuration) * duration);
 
       if (launchMode === 'time' && targetClient.balance < cost) {
         showToastMsg(`Solde insuffisant pour ${targetClient.fullName}. Requis : ${cost} FCFA. Solde : ${targetClient.balance} FCFA.`, 'error');
@@ -314,6 +441,11 @@ export const AdminPostes: React.FC = () => {
       "Terminer la session",
       `Êtes-vous sûr de vouloir forcer la fin de la session de "${clientName}" sur le poste "${name}" ?`,
       () => {
+        const targetPost = postes.find(p => p.id === id);
+        if (targetPost) {
+          const elapsedMinutes = Math.max(1, (targetPost.totalDuration || 0) - (targetPost.minutesRemaining || 0));
+          printReceipt({ ...targetPost, totalDuration: elapsedMinutes }, materialTypes);
+        }
         setPostes(postes.map(p => {
           if (p.id === id) {
             return { ...p, status: 'libre', clientName: undefined, minutesRemaining: undefined, totalDuration: undefined };
@@ -391,6 +523,291 @@ export const AdminPostes: React.FC = () => {
     return matchesType && matchesStatus && matchesSearch;
   });
 
+  const renderPosteCard = (post: GameStation) => {
+    const percentRemaining = post.minutesRemaining !== undefined && post.totalDuration 
+      ? (post.minutesRemaining / post.totalDuration) * 100 
+      : 0;
+
+    const mType = materialTypes.find(t => t.type === post.type);
+    const priceDisplay = mType ? formatPriceTag(post.type, materialTypes) : '';
+
+    // Status colors and shadows
+    let borderLeftColor = 'var(--success-500)';
+    let glowShadow = 'var(--shadow-sm)';
+    let cardBg = 'var(--neutral-0)';
+    let statusLabel = 'Libre';
+    let statusBadgeClass = 'badge-success';
+
+    if (post.status === 'occupe') {
+      borderLeftColor = 'var(--primary-500)';
+      glowShadow = '0 6px 20px rgba(10, 66, 158, 0.12)';
+      cardBg = 'var(--neutral-0)';
+      statusLabel = 'En Jeu';
+      statusBadgeClass = 'badge-info';
+    } else if (post.status === 'hors-service') {
+      borderLeftColor = 'var(--neutral-400)';
+      glowShadow = 'var(--shadow-xs)';
+      cardBg = '#fafafa';
+      statusLabel = 'Maintenance';
+      statusBadgeClass = 'badge-danger';
+    }
+
+    if (isEditMode) {
+      borderLeftColor = 'var(--warning-500)';
+      glowShadow = '0 4px 12px rgba(245, 158, 11, 0.15)';
+    }
+
+    // Urgent state if minutesRemaining <= 10
+    const isUrgent = post.status === 'occupe' && post.minutesRemaining !== undefined && post.minutesRemaining <= 10;
+
+    return (
+      <div 
+        key={post.id} 
+        className={`card animate-fade-in ${isEditMode ? 'edit-pulsing' : ''}`} 
+        onClick={() => {
+          if (isEditMode) {
+            setEditPoste(post);
+          }
+        }}
+        style={{
+          padding: 'var(--space-5)',
+          border: '1px solid var(--neutral-200)',
+          borderLeft: `5px solid ${borderLeftColor}`,
+          boxShadow: glowShadow,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 'var(--space-4)',
+          opacity: post.status === 'hors-service' ? 0.85 : 1,
+          cursor: isEditMode ? 'pointer' : 'default',
+          transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+          backgroundColor: cardBg,
+          position: 'relative',
+          overflow: 'hidden',
+          backgroundImage: post.status === 'hors-service' 
+            ? 'repeating-linear-gradient(-45deg, #f8f9fa, #f8f9fa 10px, #ffffff 10px, #ffffff 20px)' 
+            : undefined
+        }}
+      >
+        {/* Urgent overlay border */}
+        {isUrgent && (
+          <div style={{
+            position: 'absolute',
+            inset: 0,
+            border: '2px solid var(--danger-500)',
+            borderRadius: 'var(--radius-md)',
+            pointerEvents: 'none',
+            animation: 'pulse-glow 1.5s infinite'
+          }} />
+        )}
+
+        {/* Top Row: Name, Type and Status indicator */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span style={{ fontSize: 'var(--font-base)', fontWeight: 800, color: 'var(--neutral-800)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {post.name}
+              {post.status === 'libre' && (
+                <span style={{
+                  width: '8px',
+                  height: '8px',
+                  backgroundColor: 'var(--success-500)',
+                  borderRadius: '50%',
+                  display: 'inline-block',
+                  boxShadow: '0 0 8px var(--success-500)',
+                  animation: 'pulse-glow 2s infinite'
+                }} />
+              )}
+            </span>
+            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--neutral-500)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Gamepad2 size={12} style={{ color: 'var(--primary-400)' }} />
+              {mType?.label || post.type}
+            </span>
+          </div>
+          <span className={`badge ${statusBadgeClass}`} style={{ fontWeight: 700, fontSize: '10px', padding: '3px 8px' }}>
+            {statusLabel}
+          </span>
+        </div>
+
+        {/* Middle Row: Details or Play Session info */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          {post.status === 'occupe' ? (
+            <div style={{
+              backgroundColor: isUrgent ? 'var(--danger-50)' : 'var(--primary-50)',
+              padding: 'var(--space-3) var(--space-4)',
+              borderRadius: 'var(--radius-md)',
+              border: `1px solid ${isUrgent ? 'var(--danger-100)' : 'var(--primary-100)'}`,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 'var(--font-xs)', fontWeight: 600, color: 'var(--neutral-600)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  👤 <strong>{post.clientName}</strong>
+                </span>
+                <span style={{ 
+                  color: isUrgent ? 'var(--danger-600)' : 'var(--primary-700)', 
+                  fontWeight: 800, 
+                  fontSize: 'var(--font-sm)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  ⏱️ {formatRemainingTime(post.minutesRemaining || 0)} / {formatRemainingTime(post.totalDuration || post.minutesRemaining || 0)}
+                </span>
+              </div>
+              
+              {/* Progress Bar */}
+              <div style={{ width: '100%', height: '8px', backgroundColor: 'var(--neutral-200)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
+                <div style={{ 
+                  width: `${percentRemaining}%`, 
+                  height: '100%', 
+                  background: isUrgent 
+                    ? 'linear-gradient(90deg, var(--danger-500), #f43f5e)' 
+                    : 'linear-gradient(90deg, var(--primary-500), var(--accent-500))', 
+                  transition: 'width 0.5s ease-out' 
+                }} />
+              </div>
+              {isUrgent && (
+                <span style={{ fontSize: '9px', color: 'var(--danger-600)', fontWeight: 700, textTransform: 'uppercase', textAlign: 'center', letterSpacing: '0.5px' }}>
+                  Temps presque écoulé !
+                </span>
+              )}
+            </div>
+          ) : post.status === 'libre' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <p style={{ fontSize: 'var(--font-xs)', color: 'var(--neutral-500)', lineHeight: 1.4, margin: 0, fontStyle: 'italic' }}>
+                {post.characteristics}
+              </p>
+              {priceDisplay && (
+                <div style={{ 
+                  alignSelf: 'flex-start',
+                  backgroundColor: 'var(--success-50)', 
+                  color: 'var(--success-700)', 
+                  padding: '2px 8px', 
+                  borderRadius: 'var(--radius-sm)', 
+                  fontSize: '11px', 
+                  fontWeight: 700,
+                  border: '1px solid var(--success-100)',
+                  marginTop: '4px'
+                }}>
+                  {priceDisplay}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', color: 'var(--neutral-500)' }}>
+              <p style={{ fontSize: 'var(--font-xs)', margin: 0, fontWeight: 500 }}>
+                🛠️ Poste hors service pour maintenance.
+              </p>
+              <p style={{ fontSize: '10px', margin: 0, opacity: 0.8 }}>
+                Motif: {post.characteristics}
+              </p>
+            </div>
+          )}
+          <span style={{ fontSize: '9px', color: 'var(--neutral-400)', fontWeight: 600, display: 'block', marginTop: '2px' }}>
+            IP Smart Plug: {post.smartPlugIp}
+          </span>
+        </div>
+
+        {/* Bottom Row: Actions */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', borderTop: '1px solid var(--neutral-100)', paddingTop: 'var(--space-3)' }}>
+          {isEditMode ? (
+            <button 
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditPoste(post);
+              }} 
+              className="btn btn-secondary btn-sm" 
+              style={{ 
+                color: '#b45309', 
+                borderColor: '#fcd34d', 
+                backgroundColor: '#fffbeb', 
+                gap: '4px',
+                width: '100%',
+                justifyContent: 'center'
+              }}
+              title="Modifier la configuration"
+            >
+              <Edit2 size={12} /> Modifier la configuration
+            </button>
+          ) : (
+            <>
+              {post.status === 'libre' && (
+                <>
+                  <button 
+                    onClick={() => setShowLaunchModal(post)} 
+                    className="btn btn-secondary btn-sm" 
+                    style={{ color: 'var(--success-700)', borderColor: 'var(--success-100)', backgroundColor: 'var(--success-50)', gap: '4px', fontWeight: 600 }}
+                    title="Lancer une session"
+                  >
+                    <Play size={12} /> Lancer Session
+                  </button>
+                  <button 
+                    onClick={() => handleToggleOutOfService(post.id, post.name, post.status)} 
+                    className="btn btn-secondary btn-icon btn-sm" 
+                    style={{ width: '30px', height: '30px', padding: 0 }}
+                    title="Mettre hors-service"
+                  >
+                    <Ban size={12} />
+                  </button>
+                </>
+              )}
+
+              {post.status === 'occupe' && (
+                <>
+                  <button 
+                    onClick={() => setShowExtendModal(post)} 
+                    className="btn btn-secondary btn-sm" 
+                    style={{ width: '30px', height: '30px', padding: 0 }}
+                    title="Prolonger"
+                  >
+                    <Clock size={12} />
+                  </button>
+                  <button 
+                    onClick={() => setShowTransferModal(post)} 
+                    className="btn btn-secondary btn-sm" 
+                    style={{ width: '30px', height: '30px', padding: 0 }}
+                    title="Transférer de poste"
+                  >
+                    <ArrowRightLeft size={12} />
+                  </button>
+                  <button 
+                    onClick={() => handleEndSession(post.id, post.name, post.clientName || '')} 
+                    className="btn btn-secondary btn-sm" 
+                    style={{ color: 'var(--danger-500)', borderColor: 'var(--danger-100)', fontWeight: 600 }}
+                    title="Terminer la session"
+                  >
+                    Arrêter
+                  </button>
+                </>
+              )}
+
+              {post.status === 'hors-service' && (
+                <>
+                  <button 
+                    onClick={() => handleToggleOutOfService(post.id, post.name, post.status)} 
+                    className="btn btn-secondary btn-sm" 
+                    style={{ color: 'var(--primary-600)', borderColor: 'var(--primary-100)' }}
+                  >
+                    Remettre En Service
+                  </button>
+                  <button 
+                    onClick={() => handleDeletePoste(post.id, post.name)} 
+                    className="btn btn-secondary btn-icon btn-sm" 
+                    style={{ color: 'var(--danger-500)', borderColor: 'var(--danger-100)', width: '30px', height: '30px', padding: 0 }}
+                    title="Supprimer définitivement"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
       
@@ -428,25 +845,30 @@ export const AdminPostes: React.FC = () => {
         <div style={{
           backgroundColor: '#fffbeb',
           border: '1.5px dashed #f59e0b',
-          borderRadius: 'var(--radius-md)',
-          padding: 'var(--space-3) var(--space-4)',
+          borderRadius: 'var(--radius-lg)',
+          padding: 'var(--space-4) var(--space-5)',
           color: '#b45309',
           fontSize: 'var(--font-sm)',
-          fontWeight: 600,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 'var(--space-2)',
-          boxShadow: 'var(--shadow-sm)',
-          animation: 'fade-in 0.2s ease-out'
+          fontWeight: 600
         }}>
-          <Edit2 size={16} style={{ color: '#f59e0b' }} />
-          <span>Mode Modification Actif : Cliquez sur un poste pour modifier sa configuration.</span>
+          💡 Mode Édition Actif — Cliquez sur n'importe quel poste pour modifier sa configuration physique (nom, description, IP Smart Plug, type).
         </div>
       )}
 
-      {/* Filter and stats bar */}
-      <div className="card" style={{ padding: 'var(--space-4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-4)' }}>
-        <div style={{ display: 'flex', gap: 'var(--space-3)', flex: 1, minWidth: '280px', flexWrap: 'wrap' }}>
+      {/* Search and Filters Bar */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        flexWrap: 'wrap', 
+        gap: 'var(--space-4)',
+        backgroundColor: 'var(--neutral-0)',
+        padding: 'var(--space-4)',
+        borderRadius: 'var(--radius-lg)',
+        border: '1px solid var(--neutral-200)',
+        boxShadow: 'var(--shadow-sm)'
+      }}>
+        <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
           
           {/* Search */}
           <div style={{ position: 'relative', width: '220px' }}>
@@ -488,207 +910,92 @@ export const AdminPostes: React.FC = () => {
           </select>
         </div>
 
-        <div style={{ fontSize: 'var(--font-xs)', color: 'var(--neutral-500)', fontWeight: 600, display: 'flex', gap: 'var(--space-3)' }}>
+        <div style={{ fontSize: 'var(--font-xs)', color: 'var(--neutral-600)', fontWeight: 600, display: 'flex', gap: 'var(--space-3)' }}>
           <span>Libres: <strong style={{ color: 'var(--success-600)' }}>{postes.filter(p => p.status === 'libre').length}</strong></span>
           <span>Occupés: <strong style={{ color: 'var(--primary-500)' }}>{postes.filter(p => p.status === 'occupe').length}</strong></span>
           <span>HS: <strong style={{ color: 'var(--danger-500)' }}>{postes.filter(p => p.status === 'hors-service').length}</strong></span>
         </div>
       </div>
 
-      {/* Grid Display */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 'var(--space-5)' }}>
-        {filteredPostes.map(post => {
-          const percentRemaining = post.minutesRemaining !== undefined && post.totalDuration 
-            ? (post.minutesRemaining / post.totalDuration) * 100 
-            : 0;
+      {/* Grouped Display */}
+      {(() => {
+        // Find which types have stations
+        const typesWithStations = materialTypes.filter(mType => 
+          filteredPostes.some(p => p.type === mType.type)
+        );
+        const unmatchedStations = filteredPostes.filter(p => 
+          !materialTypes.some(m => m.type === p.type)
+        );
 
+        if (filteredPostes.length === 0) {
           return (
-            <div 
-              key={post.id} 
-              className="card animate-fade-in" 
-              onClick={() => {
-                if (isEditMode) {
-                  setEditPoste(post);
-                }
-              }}
-              style={{
-                padding: 'var(--space-5)',
-                border: `1.5px solid ${
-                  isEditMode ? '#f59e0b' :
-                  post.status === 'occupe' ? 'rgba(10, 66, 158, 0.15)' : 
-                  post.status === 'hors-service' ? 'var(--neutral-200)' : 
-                  'rgba(16, 185, 129, 0.15)'
-                }`,
-                boxShadow: isEditMode ? '0 4px 12px rgba(245, 158, 11, 0.15)' : (post.status === 'occupe' ? 'var(--shadow-glow-primary)' : 'var(--shadow-sm)'),
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 'var(--space-4)',
-                opacity: post.status === 'hors-service' ? 0.75 : 1,
-                cursor: isEditMode ? 'pointer' : 'default',
-                transition: 'all 0.2s ease-in-out'
-              }}
-            >
-              {/* Top Row: Name, Type and Status indicator */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ fontSize: 'var(--font-base)', fontWeight: 700, color: 'var(--neutral-800)' }}>
-                    {post.name}
-                  </span>
-                  <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--neutral-400)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-                    {(() => {
-                      const tLower = post.type.toLowerCase();
-                      const label = materialTypes.find(t => t.type === post.type)?.label || post.type;
-                      let icon = <Gamepad2 size={10} />;
-                      if (tLower.includes('pc') || tLower.includes('computer')) {
-                        icon = <Monitor size={10} />;
-                      } else if (tLower.includes('vr') || tLower.includes('quest') || tLower.includes('vive') || tLower.includes('virtual')) {
-                        icon = <HelpCircle size={10} />;
-                      }
-                      return (
-                        <>
-                          {icon}
-                          {label}
-                        </>
-                      );
-                    })()}
-                  </span>
-                </div>
-                <span className={`badge ${
-                  post.status === 'libre' ? 'badge-success' : 
-                  post.status === 'occupe' ? 'badge-info' : 'badge-danger'
-                }`}>
-                  {post.status === 'libre' ? 'Libre' : 
-                   post.status === 'occupe' ? 'Joueur en cours' : 'Maintenance'}
-                </span>
-              </div>
-
-              {/* Middle Row: Details or Play Session info */}
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                {post.status === 'occupe' ? (
-                  <div style={{
-                    backgroundColor: 'var(--primary-50)',
-                    padding: 'var(--space-3)',
-                    borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--primary-100)'
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--font-xs)', fontWeight: 600, color: 'var(--neutral-500)', marginBottom: '4px' }}>
-                      <span>Joueur: <strong style={{ color: 'var(--neutral-800)' }}>{post.clientName}</strong></span>
-                      <span style={{ color: 'var(--primary-700)', fontWeight: 700 }}>{post.minutesRemaining} min</span>
-                    </div>
-                    {/* Progress Bar */}
-                    <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--neutral-200)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
-                      <div style={{ width: `${percentRemaining}%`, height: '100%', backgroundColor: 'var(--primary-500)', transition: 'width 0.3s ease-out' }} />
-                    </div>
-                  </div>
-                ) : (
-                  <p style={{ fontSize: 'var(--font-xs)', color: 'var(--neutral-500)', lineHeight: 1.4 }}>
-                    {post.characteristics}
-                  </p>
-                )}
-                <span style={{ fontSize: '9px', color: 'var(--neutral-400)', fontWeight: 600 }}>
-                  Smart Plug IP: {post.smartPlugIp}
-                </span>
-              </div>
-
-              {/* Bottom Row: Actions */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', borderTop: '1px solid var(--neutral-100)', paddingTop: 'var(--space-3)' }}>
-                {isEditMode ? (
-                  <button 
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditPoste(post);
-                    }} 
-                    className="btn btn-secondary btn-sm" 
-                    style={{ 
-                      color: '#b45309', 
-                      borderColor: '#fcd34d', 
-                      backgroundColor: '#fffbeb', 
-                      gap: '4px',
-                      width: '100%',
-                      justifyContent: 'center'
-                    }}
-                    title="Modifier la configuration"
-                  >
-                    <Edit2 size={12} /> Modifier la configuration
-                  </button>
-                ) : (
-                  <>
-                    {post.status === 'libre' && (
-                      <>
-                        <button 
-                          onClick={() => setShowLaunchModal(post)} 
-                          className="btn btn-secondary btn-sm" 
-                          style={{ color: 'var(--success-700)', borderColor: 'var(--success-100)', backgroundColor: 'var(--success-50)', gap: '4px' }}
-                          title="Lancer une session"
-                        >
-                          <Play size={12} /> Jouer
-                        </button>
-                        <button 
-                          onClick={() => handleToggleOutOfService(post.id, post.name, post.status)} 
-                          className="btn btn-secondary btn-icon btn-sm" 
-                          title="Mettre hors-service"
-                        >
-                          <Ban size={12} />
-                        </button>
-                      </>
-                    )}
-
-                    {post.status === 'occupe' && (
-                      <>
-                        <button 
-                          onClick={() => setShowExtendModal(post)} 
-                          className="btn btn-secondary btn-sm" 
-                          title="Prolonger"
-                        >
-                          <Clock size={12} />
-                        </button>
-                        <button 
-                          onClick={() => setShowTransferModal(post)} 
-                          className="btn btn-secondary btn-sm" 
-                          title="Transférer de poste"
-                        >
-                          <ArrowRightLeft size={12} />
-                        </button>
-                        <button 
-                          onClick={() => handleEndSession(post.id, post.name, post.clientName || '')} 
-                          className="btn btn-secondary btn-sm" 
-                          style={{ color: 'var(--danger-500)', borderColor: 'var(--danger-100)' }}
-                          title="Terminer la session"
-                        >
-                          Arrêter
-                        </button>
-                      </>
-                    )}
-
-                    {post.status === 'hors-service' && (
-                      <>
-                        <button 
-                          onClick={() => handleToggleOutOfService(post.id, post.name, post.status)} 
-                          className="btn btn-secondary btn-sm" 
-                          style={{ color: 'var(--primary-600)', borderColor: 'var(--primary-100)' }}
-                        >
-                          Remettre En Service
-                        </button>
-                        <button 
-                          onClick={() => handleDeletePoste(post.id, post.name)} 
-                          className="btn btn-secondary btn-icon btn-sm" 
-                          style={{ color: 'var(--danger-500)', borderColor: 'var(--danger-100)' }}
-                          title="Supprimer définitivement"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </>
-                    )}
-                  </>
-                )}
-              </div>
+            <div className="card" style={{ padding: 'var(--space-8)', textAlign: 'center', color: 'var(--neutral-400)' }}>
+              Aucun poste ne correspond aux filtres de recherche.
             </div>
           );
-        })}
-      </div>
+        }
 
-      {/* Add Poste Modal */}
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-8)' }}>
+            {typesWithStations.map(mType => {
+              const stationsInType = filteredPostes.filter(p => p.type === mType.type);
+              
+              return (
+                <div key={mType.type} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                  {/* Category Header */}
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'space-between',
+                    borderBottom: '2px solid var(--neutral-200)', 
+                    paddingBottom: 'var(--space-2)'
+                  }}>
+                    <h3 style={{ fontSize: 'var(--font-base)', fontWeight: 800, color: 'var(--neutral-800)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      <Gamepad2 size={18} style={{ color: 'var(--primary-500)' }} />
+                      {mType.label}
+                    </h3>
+                    <span className="badge badge-info" style={{ fontSize: '10px', padding: '2px 8px', borderRadius: 'var(--radius-full)' }}>
+                      {stationsInType.length} poste{stationsInType.length > 1 ? 's' : ''}
+                    </span>
+                  </div>
+
+                  {/* Grid for this category */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 'var(--space-5)' }}>
+                    {stationsInType.map(post => renderPosteCard(post))}
+                  </div>
+                </div>
+              );
+            })}
+
+            {unmatchedStations.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                {/* Unmatched Category Header */}
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'space-between',
+                  borderBottom: '2px solid var(--neutral-200)', 
+                  paddingBottom: 'var(--space-2)'
+                }}>
+                  <h3 style={{ fontSize: 'var(--font-base)', fontWeight: 800, color: 'var(--neutral-800)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    <Gamepad2 size={18} style={{ color: 'var(--neutral-400)' }} />
+                    Autres Matériels
+                  </h3>
+                  <span className="badge badge-info" style={{ fontSize: '10px', padding: '2px 8px', borderRadius: 'var(--radius-full)' }}>
+                    {unmatchedStations.length} poste{unmatchedStations.length > 1 ? 's' : ''}
+                  </span>
+                </div>
+
+                {/* Grid for unmatched category */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 'var(--space-5)' }}>
+                  {unmatchedStations.map(post => renderPosteCard(post))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {showAddModal && (
         <div style={{
           position: 'fixed',
