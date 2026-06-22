@@ -115,30 +115,31 @@ const Toast: React.FC<{ message: string; type: 'success' | 'error' }> = ({ messa
 
 // ─── Écran Login (design system de l'app) ────────────────────────────────────
 
-const LoginScreen: React.FC<{ onLogin: (client: MemberClient) => void }> = ({ onLogin }) => {
-  const [username, setUsername] = useState('');
+const LoginScreen: React.FC<{
+  onSubmitCode: (code: string) => { success: boolean; error?: string };
+}> = ({ onSubmitCode }) => {
+  const [sessionCode, setSessionCode] = useState('');
   const [error, setError] = useState('');
   const [isShaking, setIsShaking] = useState(false);
+
+  const shake = () => {
+    setIsShaking(true);
+    setTimeout(() => setIsShaking(false), 500);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    const clients = getClients();
-    const found = clients.find(c => c.username.toLowerCase() === username.trim().toLowerCase());
-
-    if (!found) {
-      setError('Identifiant introuvable. Vérifiez votre code joueur.');
-      setIsShaking(true);
-      setTimeout(() => setIsShaking(false), 500);
-      return;
+    const code = sessionCode.trim().toUpperCase();
+    if (code.length !== 6) {
+      setError('Le code doit contenir exactement 6 caractères.');
+      shake(); return;
     }
-    if (found.status === 'suspended') {
-      setError('Votre compte est suspendu. Contactez le caissier.');
-      setIsShaking(true);
-      setTimeout(() => setIsShaking(false), 500);
-      return;
+    const res = onSubmitCode(code);
+    if (!res.success) {
+      setError(res.error || 'Code invalide ou déjà utilisé.');
+      shake();
     }
-    onLogin(found);
   };
 
   return (
@@ -152,7 +153,7 @@ const LoginScreen: React.FC<{ onLogin: (client: MemberClient) => void }> = ({ on
       position: 'relative',
       overflow: 'hidden',
     }}>
-      {/* Background blobs (same as Login.tsx) */}
+      {/* Background blobs */}
       <div style={{
         position: 'absolute', width: '500px', height: '500px', borderRadius: '50%',
         background: 'radial-gradient(circle, rgba(26,109,224,0.06) 0%, rgba(124,58,237,0.02) 100%)',
@@ -177,8 +178,8 @@ const LoginScreen: React.FC<{ onLogin: (client: MemberClient) => void }> = ({ on
           animation: isShaking ? 'shake 0.4s ease' : undefined,
         }}
       >
-        {/* Logo & Brand (same as Login.tsx) */}
-        <div style={{ textAlign: 'center', marginBottom: 'var(--space-8)' }}>
+        {/* Logo & Brand */}
+        <div style={{ textAlign: 'center', marginBottom: 'var(--space-7)' }}>
           <img src={logoImg} alt="PlayControl Logo" style={{
             width: '80px', height: '80px',
             borderRadius: 'var(--radius-lg)',
@@ -194,8 +195,8 @@ const LoginScreen: React.FC<{ onLogin: (client: MemberClient) => void }> = ({ on
           }}>
             Espace Joueur
           </h1>
-          <p style={{ color: 'var(--neutral-500)', fontSize: 'var(--font-sm)' }}>
-            Connectez-vous avec votre code de sesssion
+          <p style={{ color: 'var(--neutral-500)', fontSize: 'var(--font-sm)', marginTop: 'var(--space-2)' }}>
+            Saisissez votre code de session pour vous connecter
           </p>
         </div>
 
@@ -213,32 +214,37 @@ const LoginScreen: React.FC<{ onLogin: (client: MemberClient) => void }> = ({ on
         )}
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
-          <div className="input-group">
-            <div style={{ position: 'relative' }}>
-              <Gamepad2 size={18} style={{
-                position: 'absolute', left: '12px', top: '50%',
-                transform: 'translateY(-50%)', color: 'var(--neutral-400)',
-              }} />
+          <div>
+            <div className="input-group">
+              <label className="input-label" htmlFor="session-code">Code de session</label>
               <input
-                id="player-username"
+                id="session-code"
                 type="text"
                 className={`input-field${error ? ' input-error' : ''}`}
-                placeholder="Ex: Gamer_Pro"
-                value={username}
-                onChange={e => setUsername(e.target.value)}
-                style={{ paddingLeft: '40px' }}
+                placeholder="Ex : 4UDTDC"
+                value={sessionCode}
+                onChange={e => setSessionCode(e.target.value.toUpperCase())}
+                maxLength={6}
                 autoFocus
                 required
+                style={{
+                  textAlign: 'center',
+                  fontSize: '28px',
+                  fontWeight: 900,
+                  letterSpacing: '8px',
+                  fontFamily: 'monospace',
+                  padding: 'var(--space-4)',
+                }}
               />
             </div>
           </div>
-
           <button
             type="submit"
             className="btn btn-black"
-            style={{ width: '100%', marginTop: 'var(--space-2)' }}
+            style={{ width: '100%' }}
+            disabled={sessionCode.length < 6}
           >
-            Lancer la session maintenant <ArrowRight size={16} style={{ marginLeft: 'var(--space-2)' }} />
+            Lancer la session maintenant →
           </button>
         </form>
       </div>
@@ -711,36 +717,111 @@ const PlayerDashboard: React.FC<{
 // ─── Portail Principal ────────────────────────────────────────────────────────
 
 export const JoueurPortal: React.FC = () => {
-  const [loggedClient, setLoggedClient] = useState<MemberClient | null>(null);
-  const [screen, setScreen] = useState<'dashboard' | 'activate-code'>('dashboard');
-  const [freshClient, setFreshClient] = useState<MemberClient | null>(null);
+  const [loggedClient, setLoggedClient] = useState<MemberClient | null>(() => {
+    try {
+      const saved = sessionStorage.getItem('playcontrol_logged_client');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [screen, setScreen] = useState<'dashboard' | 'activate-code' | 'guest-success'>('dashboard');
+  const [guestPoste, setGuestPoste] = useState<string>(''); // nom du poste activé pour l'invité
 
-  // Refresh client data from localStorage when returning to dashboard
-  const refreshClient = () => {
-    if (!freshClient) return;
+  // Soumission d'un code de session depuis l'écran de connexion
+  const handleSubmitCode = (code: string): { success: boolean; error?: string } => {
+    const postes = getPostes();
+    const normalized = code.trim().toUpperCase();
+    const poste = postes.find(p => p.status === 'en-attente' && p.sessionCode === normalized);
+
+    if (!poste) {
+      return { success: false, error: 'Code invalide ou déjà utilisé. Vérifiez auprès du caissier.' };
+    }
+
+    // Chercher si le client est un abonné/membre enregistré
     const clients = getClients();
-    const updated = clients.find(c => c.id === freshClient.id);
-    if (updated) setLoggedClient(updated);
-    setFreshClient(null);
+    const member = clients.find(c => c.username.toLowerCase() === (poste.clientName || '').toLowerCase());
+
+    if (member && member.status === 'suspended') {
+      return { success: false, error: 'Compte membre suspendu. Contactez le caissier.' };
+    }
+
+    // Activer le poste immédiatement
+    const updatedPostes = postes.map(p =>
+      p.id === poste.id
+        ? { ...p, status: 'occupe' as const, sessionCode: undefined }
+        : p
+    );
+    savePostes(updatedPostes);
+
+    if (member) {
+      setLoggedClient(member);
+      sessionStorage.setItem('playcontrol_logged_client', JSON.stringify(member));
+      setScreen('dashboard');
+      return { success: true };
+    } else {
+      // Joueur invité (temporaire)
+      setGuestPoste(poste.name);
+      setScreen('guest-success');
+      return { success: true };
+    }
   };
 
-  const handleLogin = (client: MemberClient) => {
-    setLoggedClient(client);
-    setScreen('dashboard');
+  const handleLogout = () => {
+    setLoggedClient(null);
+    sessionStorage.removeItem('playcontrol_logged_client');
   };
 
   const handleActivated = () => {
-    // Refresh postes data and return to dashboard
     setScreen('dashboard');
     if (loggedClient) {
       const clients = getClients();
       const updated = clients.find(c => c.id === loggedClient.id);
-      if (updated) setLoggedClient(updated);
+      if (updated) {
+        setLoggedClient(updated);
+        sessionStorage.setItem('playcontrol_logged_client', JSON.stringify(updated));
+      }
     }
   };
 
+  // Écran succès pour invité
+  if (screen === 'guest-success') {
+    return (
+      <div style={{
+        minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'var(--neutral-50)', padding: 'var(--space-6)', position: 'relative', overflow: 'hidden',
+      }}>
+        <div style={{
+          position: 'absolute', width: '500px', height: '500px', borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(26,109,224,0.06) 0%, rgba(124,58,237,0.02) 100%)',
+          top: '-100px', left: '-100px',
+        }} />
+        <div className="card animate-fade-in" style={{
+          width: '100%', maxWidth: '440px', padding: 'var(--space-10)',
+          boxShadow: 'var(--shadow-xl)', borderRadius: 'var(--radius-xl)',
+          zIndex: 1, border: '1px solid var(--neutral-100)', textAlign: 'center',
+        }}>
+          <div style={{ fontSize: '56px', marginBottom: 'var(--space-4)' }}>🎮</div>
+          <h1 className="gradient-text" style={{ fontSize: 'var(--font-xl)', fontWeight: 800, marginBottom: 'var(--space-2)' }}>
+            Session lancée !
+          </h1>
+          <p style={{ color: 'var(--neutral-500)', fontSize: 'var(--font-sm)', marginBottom: 'var(--space-6)', lineHeight: 1.6 }}>
+            Votre session sur <strong>{guestPoste}</strong> est maintenant active. Bonne session ! 🕹️
+          </p>
+          <div style={{
+            background: 'var(--success-50)', border: '1px solid var(--success-100)',
+            borderRadius: 'var(--radius-md)', padding: 'var(--space-4)',
+            color: 'var(--success-700)', fontSize: 'var(--font-sm)', fontWeight: 500,
+          }}>
+            ✅ Le timer démarre maintenant. Profitez bien !
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!loggedClient) {
-    return <LoginScreen onLogin={handleLogin} />;
+    return <LoginScreen onSubmitCode={handleSubmitCode} />;
   }
 
   if (screen === 'activate-code') {
@@ -756,7 +837,7 @@ export const JoueurPortal: React.FC = () => {
   return (
     <PlayerDashboard
       client={loggedClient}
-      onLogout={() => setLoggedClient(null)}
+      onLogout={handleLogout}
       onActivateSession={() => setScreen('activate-code')}
     />
   );
