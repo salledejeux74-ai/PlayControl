@@ -11,16 +11,31 @@ interface MemberClient {
   abonnementType: 'Aucun' | 'Journalier' | 'Hebdomadaire' | 'Mensuel' | 'VIP';
   abonnementExpiration: string | null;
   status: 'active' | 'suspended';
+  abonnementRemainingTime?: number; // In minutes
 }
 
 export const AdminClients: React.FC = () => {
-  const [clients, setClients] = useState<MemberClient[]>([
-    { id: '1', username: 'Gamer_Pro', fullName: 'Arthur Mbe', phone: '+237 699 99 99 99', balance: 5400, abonnementType: 'VIP', abonnementExpiration: '2026-07-15', status: 'active' },
-    { id: '2', username: 'Marc_K', fullName: 'Marc Kemajou', phone: '+237 677 77 77 77', balance: 12500, abonnementType: 'Aucun', abonnementExpiration: null, status: 'active' },
-    { id: '3', username: 'Alain_T', fullName: 'Alain Tchakounté', phone: '+237 655 55 55 55', balance: 750, abonnementType: 'Aucun', abonnementExpiration: null, status: 'active' },
-    { id: '4', username: 'Serge_F', fullName: 'Serge Fotso', phone: '+237 688 88 88 88', balance: 3200, abonnementType: 'Hebdomadaire', abonnementExpiration: '2026-06-22', status: 'active' },
-    { id: '5', username: 'Amadou_B', fullName: 'Amadou Bello', phone: '+234 80 31 23 45 67', balance: 0, abonnementType: 'Aucun', abonnementExpiration: null, status: 'suspended' },
-  ]);
+  const [clients, setClients] = useState<MemberClient[]>(() => {
+    const saved = localStorage.getItem('playcontrol_clients');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        // ignore
+      }
+    }
+    return [
+      { id: '1', username: 'Gamer_Pro', fullName: 'Arthur Mbe', phone: '+237 699 99 99 99', balance: 5400, abonnementType: 'VIP', abonnementExpiration: '2026-07-15', status: 'active', abonnementRemainingTime: 240 },
+      { id: '2', username: 'Marc_K', fullName: 'Marc Kemajou', phone: '+237 677 77 77 77', balance: 12500, abonnementType: 'Aucun', abonnementExpiration: null, status: 'active', abonnementRemainingTime: 0 },
+      { id: '3', username: 'Alain_T', fullName: 'Alain Tchakounté', phone: '+237 655 55 55 55', balance: 750, abonnementType: 'Aucun', abonnementExpiration: null, status: 'active', abonnementRemainingTime: 0 },
+      { id: '4', username: 'Serge_F', fullName: 'Serge Fotso', phone: '+237 688 88 88 88', balance: 3200, abonnementType: 'Hebdomadaire', abonnementExpiration: '2026-06-22', status: 'active', abonnementRemainingTime: 90 },
+      { id: '5', username: 'Amadou_B', fullName: 'Amadou Bello', phone: '+234 80 31 23 45 67', balance: 0, abonnementType: 'Aucun', abonnementExpiration: null, status: 'suspended', abonnementRemainingTime: 0 },
+    ];
+  });
+
+  React.useEffect(() => {
+    localStorage.setItem('playcontrol_clients', JSON.stringify(clients));
+  }, [clients]);
 
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -246,10 +261,20 @@ export const AdminClients: React.FC = () => {
 
     // Expiration date calculator
     const today = new Date();
-    if (selectedAbonnement === 'Journalier') today.setDate(today.getDate() + 1);
-    else if (selectedAbonnement === 'Hebdomadaire') today.setDate(today.getDate() + 7);
-    else if (selectedAbonnement === 'Mensuel') today.setMonth(today.getMonth() + 1);
-    else if (selectedAbonnement === 'VIP') today.setMonth(today.getMonth() + 1);
+    let mins = 0;
+    if (selectedAbonnement === 'Journalier') {
+      today.setDate(today.getDate() + 1);
+      mins = 120;
+    } else if (selectedAbonnement === 'Hebdomadaire') {
+      today.setDate(today.getDate() + 7);
+      mins = 480;
+    } else if (selectedAbonnement === 'Mensuel') {
+      today.setMonth(today.getMonth() + 1);
+      mins = 1500;
+    } else if (selectedAbonnement === 'VIP') {
+      today.setMonth(today.getMonth() + 1);
+      mins = 3000;
+    }
 
     const expStr = today.toISOString().split('T')[0];
 
@@ -259,7 +284,8 @@ export const AdminClients: React.FC = () => {
           ...c,
           balance: c.balance - cost,
           abonnementType: selectedAbonnement,
-          abonnementExpiration: expStr
+          abonnementExpiration: expStr,
+          abonnementRemainingTime: mins
         };
       }
       return c;

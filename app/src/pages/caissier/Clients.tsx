@@ -14,13 +14,27 @@ interface MemberClient {
 }
 
 export const CaissierClients: React.FC = () => {
-  const [clients, setClients] = useState<MemberClient[]>([
-    { id: '1', username: 'Gamer_Pro', fullName: 'Arthur Mbe', phone: '+237 699 99 99 99', balance: 5400, abonnementType: 'VIP', abonnementExpiration: '2026-07-15', status: 'active' },
-    { id: '2', username: 'Marc_K', fullName: 'Marc Kemajou', phone: '+237 677 77 77 77', balance: 12500, abonnementType: 'Aucun', abonnementExpiration: null, status: 'active' },
-    { id: '3', username: 'Alain_T', fullName: 'Alain Tchakounté', phone: '+237 655 55 55 55', balance: 750, abonnementType: 'Aucun', abonnementExpiration: null, status: 'active' },
-    { id: '4', username: 'Serge_F', fullName: 'Serge Fotso', phone: '+237 688 88 88 88', balance: 3200, abonnementType: 'Hebdomadaire', abonnementExpiration: '2026-06-22', status: 'active' },
-    { id: '5', username: 'Amadou_B', fullName: 'Amadou Bello', phone: '+234 80 31 23 45 67', balance: 0, abonnementType: 'Aucun', abonnementExpiration: null, status: 'suspended' },
-  ]);
+  const [clients, setClients] = useState<MemberClient[]>(() => {
+    const saved = localStorage.getItem('playcontrol_clients');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        // ignore
+      }
+    }
+    return [
+      { id: '1', username: 'Gamer_Pro', fullName: 'Arthur Mbe', phone: '+237 699 99 99 99', balance: 5400, abonnementType: 'VIP', abonnementExpiration: '2026-07-15', status: 'active' },
+      { id: '2', username: 'Marc_K', fullName: 'Marc Kemajou', phone: '+237 677 77 77 77', balance: 12500, abonnementType: 'Aucun', abonnementExpiration: null, status: 'active' },
+      { id: '3', username: 'Alain_T', fullName: 'Alain Tchakounté', phone: '+237 655 55 55 55', balance: 750, abonnementType: 'Aucun', abonnementExpiration: null, status: 'active' },
+      { id: '4', username: 'Serge_F', fullName: 'Serge Fotso', phone: '+237 688 88 88 88', balance: 3200, abonnementType: 'Hebdomadaire', abonnementExpiration: '2026-06-22', status: 'active' },
+      { id: '5', username: 'Amadou_B', fullName: 'Amadou Bello', phone: '+234 80 31 23 45 67', balance: 0, abonnementType: 'Aucun', abonnementExpiration: null, status: 'suspended' },
+    ];
+  });
+
+  React.useEffect(() => {
+    localStorage.setItem('playcontrol_clients', JSON.stringify(clients));
+  }, [clients]);
 
   const [searchTerm, setSearchTerm] = useState('');
   

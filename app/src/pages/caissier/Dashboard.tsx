@@ -11,8 +11,9 @@ interface GameStation {
   type: string;
   characteristics: string;
   smartPlugIp: string;
-  status: 'libre' | 'occupe' | 'hors-service';
+  status: 'libre' | 'en-attente' | 'occupe' | 'hors-service';
   clientName?: string;
+  sessionCode?: string;      // Code unique affiché au caissier, saisi par le joueur
   minutesRemaining?: number;
   totalDuration?: number; // In minutes
 }
@@ -62,17 +63,41 @@ const formatPriceTag = (typeKey: string, materialTypes: MaterialType[]): string 
   return `${mType.price} FCFA / ${mType.durationMinutes} min`;
 };
 
+// Génère un code de session à 6 caractères alphanumériques en majuscules
+const generateSessionCode = (): string => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // exclut I, O, 0, 1 pour éviter les confusions
+  return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+};
 
 
-interface MockClient {
+
+interface MemberClient {
   id: string;
   username: string;
   fullName: string;
+  phone: string;
   balance: number;
-  hasAbonnement: boolean;
-  abonnementType?: string;
+  abonnementType: 'Aucun' | 'Journalier' | 'Hebdomadaire' | 'Mensuel' | 'VIP';
+  abonnementExpiration: string | null;
+  status: 'active' | 'suspended';
   abonnementRemainingTime?: number; // In minutes
 }
+
+const DEFAULT_CLIENTS: MemberClient[] = [
+  { id: '1', username: 'Gamer_Pro', fullName: 'Arthur Mbe', phone: '+237 699 99 99 99', balance: 5400, abonnementType: 'VIP', abonnementExpiration: '2026-07-15', status: 'active', abonnementRemainingTime: 240 },
+  { id: '2', username: 'Marc_K', fullName: 'Marc Kemajou', phone: '+237 677 77 77 77', balance: 12500, abonnementType: 'Aucun', abonnementExpiration: null, status: 'active', abonnementRemainingTime: 0 },
+  { id: '3', username: 'Alain_T', fullName: 'Alain Tchakounté', phone: '+237 655 55 55 55', balance: 750, abonnementType: 'Aucun', abonnementExpiration: null, status: 'active', abonnementRemainingTime: 0 },
+  { id: '4', username: 'Serge_F', fullName: 'Serge Fotso', phone: '+237 688 88 88 88', balance: 3200, abonnementType: 'Hebdomadaire', abonnementExpiration: '2026-06-22', status: 'active', abonnementRemainingTime: 90 },
+  { id: '5', username: 'Amadou_B', fullName: 'Amadou Bello', phone: '+234 80 31 23 45 67', balance: 0, abonnementType: 'Aucun', abonnementExpiration: null, status: 'suspended', abonnementRemainingTime: 0 },
+];
+
+const getClients = (): MemberClient[] => {
+  const saved = localStorage.getItem('playcontrol_clients');
+  if (saved) {
+    try { return JSON.parse(saved); } catch (e) { /* ignore */ }
+  }
+  return DEFAULT_CLIENTS;
+};
 
 export const CaissierDashboard: React.FC = () => {
   const [postes, setPostes] = useState<GameStation[]>(() => {
@@ -100,13 +125,17 @@ export const CaissierDashboard: React.FC = () => {
     localStorage.setItem('playcontrol_postes', JSON.stringify(postes));
   }, [postes]);
 
-  const mockClients: MockClient[] = [
-    { id: '1', username: 'Gamer_Pro', fullName: 'Arthur Mbe', balance: 5400, hasAbonnement: true, abonnementType: 'VIP', abonnementRemainingTime: 240 },
-    { id: '2', username: 'Marc_K', fullName: 'Marc Kemajou', balance: 12500, hasAbonnement: false },
-    { id: '3', username: 'Alain_T', fullName: 'Alain Tchakounté', balance: 750, hasAbonnement: false },
-    { id: '4', username: 'Serge_F', fullName: 'Serge Fotso', balance: 3200, hasAbonnement: true, abonnementType: 'Hebdomadaire', abonnementRemainingTime: 90 },
-    { id: '5', username: 'Amadou_B', fullName: 'Amadou Bello', balance: 0, hasAbonnement: false },
-  ];
+  // Clients depuis la base unifiée (localStorage)
+  const [memberClients, setMemberClients] = useState<MemberClient[]>(getClients);
+
+  // Synchroniser si une mise à jour externe est effectuée
+  useEffect(() => {
+    const handleStorage = () => setMemberClients(getClients());
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  const activeClients = memberClients.filter(c => c.status === 'active');
 
   // Filters
   const [filterType, setFilterType] = useState<string>('all');
@@ -122,8 +151,11 @@ export const CaissierDashboard: React.FC = () => {
 
   // Session Launch states
   const [isGuest, setIsGuest] = useState(true);
-  const [guestName, setGuestName] = useState('');
-  const [selectedClient, setSelectedClient] = useState(mockClients[1].username); // Default to Marc_K
+  const [clientSearch, setClientSearch] = useState(''); // recherche dans la liste clients
+  const [selectedClient, setSelectedClient] = useState(() => {
+    const clients = getClients().filter(c => c.status === 'active');
+    return clients.length > 0 ? clients[0].username : '';
+  });
   const [launchMode, setLaunchMode] = useState<'time' | 'abonnement'>('time');
   const [selectedDuration, setSelectedDuration] = useState<number>(60); // 60 minutes
   const [customDuration, setCustomDuration] = useState<string>('');
@@ -150,15 +182,15 @@ export const CaissierDashboard: React.FC = () => {
     setConfirmModal({ isOpen: true, title, message, onConfirm, type });
   };
 
-  // Live Timer Effect
+  // Live Timer Effect — ne décompte que sur les postes 'occupe' (session activée par le joueur)
   useEffect(() => {
     const interval = setInterval(() => {
-      setPostes(prevPostes => 
+      setPostes(prevPostes =>
         prevPostes.map(post => {
           if (post.status === 'occupe' && post.minutesRemaining !== undefined) {
             if (post.minutesRemaining <= 1) {
               showToastMsg(`La session sur "${post.name}" pour "${post.clientName}" est terminée.`);
-              return { ...post, status: 'libre', clientName: undefined, minutesRemaining: undefined, totalDuration: undefined };
+              return { ...post, status: 'libre', clientName: undefined, sessionCode: undefined, minutesRemaining: undefined, totalDuration: undefined };
             }
             return { ...post, minutesRemaining: post.minutesRemaining - 1 };
           }
@@ -170,7 +202,7 @@ export const CaissierDashboard: React.FC = () => {
   }, []);
 
   // Out of Service Toggle
-  const handleToggleOutOfService = (id: string, name: string, currentStatus: 'libre' | 'occupe' | 'hors-service') => {
+  const handleToggleOutOfService = (id: string, name: string, currentStatus: GameStation['status']) => {
     const isHS = currentStatus === 'hors-service';
     openConfirm(
       isHS ? "Remettre en service" : "Mettre hors service",
@@ -178,7 +210,7 @@ export const CaissierDashboard: React.FC = () => {
       () => {
         setPostes(postes.map(p => {
           if (p.id === id) {
-            return { ...p, status: isHS ? 'libre' : 'hors-service', clientName: undefined, minutesRemaining: undefined };
+            return { ...p, status: isHS ? 'libre' : 'hors-service', clientName: undefined, sessionCode: undefined, minutesRemaining: undefined };
           }
           return p;
         }));
@@ -196,17 +228,14 @@ export const CaissierDashboard: React.FC = () => {
     let finalClientName = '';
     let finalDuration = 0;
 
-    const duration = customDuration ? Number(customDuration) : selectedDuration;
+    const duration = selectedDuration;
 
     if (isGuest) {
-      if (!guestName.trim()) {
-        showToastMsg("Veuillez saisir le nom du joueur invité.", "error");
-        return;
-      }
-      finalClientName = guestName.trim();
+      // Pour un invité temporaire : pas de nom requis, on génère un identifiant
+      finalClientName = `Invité-${Date.now().toString(36).toUpperCase().slice(-4)}`;
       finalDuration = duration;
     } else {
-      const targetClient = mockClients.find(c => c.username === selectedClient);
+      const targetClient = activeClients.find(c => c.username === selectedClient);
       if (!targetClient) return;
 
       const targetType = materialTypes.find(t => t.type === showLaunchModal.type);
@@ -219,7 +248,7 @@ export const CaissierDashboard: React.FC = () => {
         return;
       }
 
-      if (launchMode === 'abonnement' && (!targetClient.hasAbonnement || (targetClient.abonnementRemainingTime || 0) <= 0)) {
+      if (launchMode === 'abonnement' && (targetClient.abonnementType === 'Aucun' || (targetClient.abonnementRemainingTime || 0) <= 0)) {
         showToastMsg(`Le client ${targetClient.fullName} ne dispose pas d'un abonnement actif.`, 'error');
         return;
       }
@@ -228,12 +257,16 @@ export const CaissierDashboard: React.FC = () => {
       finalDuration = launchMode === 'time' ? duration : (targetClient.abonnementRemainingTime || 60);
     }
 
+    // Générer un code de session unique
+    const code = generateSessionCode();
+
     setPostes(postes.map(p => {
       if (p.id === showLaunchModal.id) {
         return {
           ...p,
-          status: 'occupe',
+          status: 'en-attente',  // En attente que le joueur saisisse le code
           clientName: finalClientName,
+          sessionCode: code,
           minutesRemaining: finalDuration,
           totalDuration: finalDuration
         };
@@ -242,25 +275,24 @@ export const CaissierDashboard: React.FC = () => {
     }));
 
     setShowLaunchModal(null);
-    setCustomDuration('');
-    setGuestName('');
     setIsGuest(true);
-    showToastMsg(`Session lancée sur "${showLaunchModal.name}" pour "${finalClientName}".`);
+    setClientSearch('');
+    showToastMsg(`Code généré pour "${finalClientName}" sur "${showLaunchModal.name}" : ${code}`);
   };
 
-  // Terminate Session early
+  // Terminate Session early (works for both 'en-attente' and 'occupe')
   const handleEndSession = (id: string, name: string, clientName: string) => {
     openConfirm(
-      "Terminer la session",
-      `Êtes-vous sûr de vouloir forcer la fin de la session de "${clientName}" sur le poste "${name}" ?`,
+      "Annuler / Terminer la session",
+      `Êtes-vous sûr de vouloir annuler la session de "${clientName}" sur le poste "${name}" ?`,
       () => {
         setPostes(postes.map(p => {
           if (p.id === id) {
-            return { ...p, status: 'libre', clientName: undefined, minutesRemaining: undefined, totalDuration: undefined };
+            return { ...p, status: 'libre', clientName: undefined, sessionCode: undefined, minutesRemaining: undefined, totalDuration: undefined };
           }
           return p;
         }));
-        showToastMsg(`La session sur "${name}" a été arrêtée.`);
+        showToastMsg(`La session sur "${name}" a été annulée.`);
       },
       'danger'
     );
@@ -350,6 +382,12 @@ export const CaissierDashboard: React.FC = () => {
       cardBg = 'var(--neutral-0)';
       statusLabel = 'Actif';
       statusBadgeClass = 'badge-info';
+    } else if (post.status === 'en-attente') {
+      borderLeftColor = 'var(--warning-500)';
+      glowShadow = '0 6px 20px rgba(245, 158, 11, 0.15)';
+      cardBg = 'var(--neutral-0)';
+      statusLabel = 'En attente';
+      statusBadgeClass = 'badge-warning';
     } else if (post.status === 'hors-service') {
       borderLeftColor = 'var(--neutral-400)';
       glowShadow = 'var(--shadow-xs)';
@@ -459,6 +497,52 @@ export const CaissierDashboard: React.FC = () => {
                 </span>
               )}
             </div>
+          ) : post.status === 'en-attente' ? (
+            <div style={{
+              backgroundColor: 'var(--warning-50)',
+              padding: 'var(--space-3) var(--space-4)',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--warning-100)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 'var(--font-xs)', fontWeight: 600, color: 'var(--neutral-600)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  👤 <strong>{post.clientName}</strong>
+                </span>
+                <span style={{ fontSize: 'var(--font-xs)', color: 'var(--warning-600)', fontWeight: 600 }}>
+                  {formatRemainingTime(post.minutesRemaining || 0)}
+                </span>
+              </div>
+              {/* Code de session bien visible */}
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '4px',
+                padding: 'var(--space-3)',
+                background: 'white',
+                borderRadius: 'var(--radius-md)',
+                border: '2px dashed var(--warning-500)'
+              }}>
+                <span style={{ fontSize: '9px', color: 'var(--warning-600)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px' }}>
+                  Code session — à donner au joueur
+                </span>
+                <span style={{
+                  fontSize: '28px',
+                  fontWeight: 900,
+                  letterSpacing: '6px',
+                  color: 'var(--neutral-900)',
+                  fontFamily: 'monospace'
+                }}>
+                  {post.sessionCode}
+                </span>
+              </div>
+              <span style={{ fontSize: '10px', color: 'var(--warning-600)', fontWeight: 500, textAlign: 'center' }}>
+                ⏳ En attente que le joueur active la session
+              </span>
+            </div>
           ) : post.status === 'libre' ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <p style={{ fontSize: 'var(--font-xs)', color: 'var(--neutral-500)', lineHeight: 1.4, margin: 0, fontStyle: 'italic' }}>
@@ -516,6 +600,16 @@ export const CaissierDashboard: React.FC = () => {
                 <Ban size={12} />
               </button>
             </>
+          )}
+          {post.status === 'en-attente' && (
+            <button
+              onClick={() => handleEndSession(post.id, post.name, post.clientName || '')}
+              className="btn btn-secondary btn-sm"
+              style={{ color: 'var(--warning-600)', borderColor: 'var(--warning-100)', backgroundColor: 'var(--warning-50)', fontWeight: 600 }}
+              title="Annuler la session en attente"
+            >
+              Annuler
+            </button>
           )}
 
           {post.status === 'occupe' && (
@@ -721,7 +815,7 @@ export const CaissierDashboard: React.FC = () => {
               <h3 style={{ fontSize: 'var(--font-lg)', fontWeight: 700 }}>
                 Lancer Session - {showLaunchModal.name}
               </h3>
-              <button className="btn btn-ghost" onClick={() => { setShowLaunchModal(null); setIsGuest(true); setGuestName(''); }}>✕</button>
+              <button className="btn btn-ghost" onClick={() => { setShowLaunchModal(null); setIsGuest(true); setClientSearch(''); }}>✕</button>
             </div>
 
             <form onSubmit={handleLaunchSession} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
@@ -743,31 +837,136 @@ export const CaissierDashboard: React.FC = () => {
               </div>
 
               {isGuest ? (
-                <div className="input-group">
-                  <label className="input-label">Nom du joueur temporaire</label>
-                  <input 
-                    type="text" 
-                    className="input-field" 
-                    placeholder="Ex: Invité_1"
-                    value={guestName}
-                    onChange={(e) => setGuestName(e.target.value)}
-                    required
-                  />
+                /* Pour un invité : pas de nom requis, juste la durée */
+                <div style={{
+                  backgroundColor: 'var(--neutral-50)',
+                  border: '1px solid var(--neutral-200)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: 'var(--space-3) var(--space-4)',
+                  fontSize: 'var(--font-sm)',
+                  color: 'var(--neutral-500)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 'var(--space-2)',
+                }}>
+                  <span style={{ fontSize: '16px' }}>ℹ️</span>
+                  <span>Une code de sesssion sera généré automatiquement. Saisissez simplement la durée de jeu ci-dessous.</span>
                 </div>
               ) : (
                 <div className="input-group">
-                  <label className="input-label">Sélectionner le membre client</label>
-                  <select 
-                    className="select-field"
-                    value={selectedClient}
-                    onChange={(e) => setSelectedClient(e.target.value)}
-                  >
-                    {mockClients.map(c => (
-                      <option key={c.id} value={c.username}>
-                        {c.fullName} (@{c.username}) — Solde: {c.balance} FCFA {c.hasAbonnement ? `(Pass ${c.abonnementType})` : ''}
-                      </option>
-                    ))}
-                  </select>
+                  <label className="input-label">Rechercher et sélectionner un client</label>
+                  {/* Champ de recherche */}
+                  <div style={{ position: 'relative', marginBottom: 'var(--space-2)' }}>
+                    <input
+                      type="text"
+                      className="input-field"
+                      placeholder="Rechercher par nom ou pseudo..."
+                      value={clientSearch}
+                      onChange={e => setClientSearch(e.target.value)}
+                      style={{ paddingLeft: '36px', fontSize: 'var(--font-sm)' }}
+                    />
+                    <span style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: 'var(--neutral-400)', fontSize: '14px' }}>🔍</span>
+                  </div>
+                  {/* Liste filtrée */}
+                  <div style={{
+                    maxHeight: '160px',
+                    overflowY: 'auto',
+                    border: '1.5px solid var(--neutral-200)',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'var(--neutral-0)',
+                  }}>
+                    {activeClients
+                      .filter(c =>
+                        c.fullName.toLowerCase().includes(clientSearch.toLowerCase()) ||
+                        c.username.toLowerCase().includes(clientSearch.toLowerCase())
+                      )
+                      .map((c, idx, arr) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => setSelectedClient(c.username)}
+                          style={{
+                            width: '100%',
+                            textAlign: 'left',
+                            padding: 'var(--space-3) var(--space-4)',
+                            background: selectedClient === c.username ? 'var(--primary-50)' : 'transparent',
+                            border: 'none',
+                            borderBottom: idx < arr.length - 1 ? '1px solid var(--neutral-100)' : 'none',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 'var(--space-3)',
+                            transition: 'background var(--transition-fast)',
+                          }}
+                          onMouseEnter={e => { if (selectedClient !== c.username) e.currentTarget.style.background = 'var(--neutral-50)'; }}
+                          onMouseLeave={e => { if (selectedClient !== c.username) e.currentTarget.style.background = 'transparent'; }}
+                        >
+                          {/* Avatar initiales */}
+                          <div style={{
+                            width: '30px', height: '30px', borderRadius: '50%',
+                            background: selectedClient === c.username ? 'var(--gradient-primary)' : 'var(--neutral-200)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: '11px', fontWeight: 700, color: selectedClient === c.username ? 'white' : 'var(--neutral-600)',
+                            flexShrink: 0,
+                          }}>
+                            {c.fullName.charAt(0).toUpperCase()}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, fontSize: 'var(--font-sm)', color: 'var(--neutral-800)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {c.fullName}
+                            </div>
+                            <div style={{ fontSize: '11px', color: 'var(--neutral-400)' }}>@{c.username}</div>
+                          </div>
+                          {selectedClient === c.username && (
+                            <span style={{ color: 'var(--primary-500)', fontSize: '14px', flexShrink: 0 }}>✓</span>
+                          )}
+                        </button>
+                      ))
+                    }
+                    {activeClients.filter(c =>
+                      c.fullName.toLowerCase().includes(clientSearch.toLowerCase()) ||
+                      c.username.toLowerCase().includes(clientSearch.toLowerCase())
+                    ).length === 0 && (
+                      <div style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--neutral-400)', fontSize: 'var(--font-sm)' }}>
+                        Aucun client trouvé
+                      </div>
+                    )}
+                  </div>
+                  {/* Infos du client sélectionné */}
+                  {(() => {
+                    const sel = activeClients.find(c => c.username === selectedClient);
+                    if (!sel) return null;
+                    return (
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: 'var(--space-2) var(--space-3)',
+                        background: 'var(--neutral-50)',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--neutral-200)',
+                        marginTop: 'var(--space-2)',
+                        gap: 'var(--space-3)',
+                        flexWrap: 'wrap',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                          <span style={{ fontSize: '12px', color: 'var(--neutral-500)', fontWeight: 500 }}>Solde :</span>
+                          <span style={{
+                            fontWeight: 800,
+                            fontSize: 'var(--font-sm)',
+                            color: sel.balance > 0 ? 'var(--success-600)' : 'var(--danger-500)',
+                          }}>
+                            {sel.balance.toLocaleString()} FCFA
+                          </span>
+                        </div>
+                        {sel.abonnementType !== 'Aucun' && (
+                          <span className="badge badge-warning" style={{ fontSize: '10px' }}>
+                            ⭐ Pass {sel.abonnementType} — {sel.abonnementRemainingTime} min
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -796,46 +995,78 @@ export const CaissierDashboard: React.FC = () => {
                 </div>
               )}
 
-              {launchMode === 'time' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                  <label className="input-label">Durée de jeu</label>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-2)' }}>
-                    <button 
-                      type="button" 
-                      className={`btn ${selectedDuration === 30 && !customDuration ? 'btn-black' : 'btn-secondary'} btn-sm`}
-                      onClick={() => { setSelectedDuration(30); setCustomDuration(''); }}
-                    >
-                      30 min
-                    </button>
-                    <button 
-                      type="button" 
-                      className={`btn ${selectedDuration === 60 && !customDuration ? 'btn-black' : 'btn-secondary'} btn-sm`}
-                      onClick={() => { setSelectedDuration(60); setCustomDuration(''); }}
-                    >
-                      1 heure
-                    </button>
-                    <button 
-                      type="button" 
-                      className={`btn ${selectedDuration === 120 && !customDuration ? 'btn-black' : 'btn-secondary'} btn-sm`}
-                      onClick={() => { setSelectedDuration(120); setCustomDuration(''); }}
-                    >
-                      2 heures
-                    </button>
+              {launchMode === 'time' && (() => {
+                const mType = materialTypes.find(t => t.type === showLaunchModal.type);
+                const unitPrice   = mType?.price ?? 0;
+                const unitMinutes = mType?.durationMinutes ?? 60;
+
+                const calcCost = (mins: number) =>
+                  Math.ceil((unitPrice / unitMinutes) * mins);
+
+                const activeCost = calcCost(selectedDuration);
+
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                    <label className="input-label">Durée de jeu</label>
+
+                    {/* Boutons preset avec prix */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-2)' }}>
+                      {[
+                        { mins: 30,  label: '30 min' },
+                        { mins: 60,  label: '1 heure' },
+                        { mins: 120, label: '2 heures' },
+                      ].map(({ mins, label }) => {
+                        const cost = calcCost(mins);
+                        const isActive = selectedDuration === mins;
+                        return (
+                          <button
+                            key={mins}
+                            type="button"
+                            className={`btn ${isActive ? 'btn-black' : 'btn-secondary'} btn-sm`}
+                            onClick={() => setSelectedDuration(mins)}
+                            style={{ flexDirection: 'column', gap: '2px', height: 'auto', padding: 'var(--space-2) var(--space-1)' }}
+                          >
+                            <span style={{ fontWeight: 700 }}>{label}</span>
+                            <span style={{
+                              fontSize: '10px',
+                              opacity: 0.85,
+                              fontWeight: 600,
+                              color: isActive ? 'rgba(255,255,255,0.8)' : 'var(--primary-500)',
+                            }}>
+                              {cost.toLocaleString()} FCFA
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Récapitulatif du coût */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: 'var(--space-3) var(--space-4)',
+                      background: 'var(--gradient-subtle)',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--primary-100)',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', color: 'var(--neutral-600)', fontSize: 'var(--font-sm)' }}>
+                        ⏱️ <span>{selectedDuration} min</span>
+                        <span style={{ color: 'var(--neutral-300)' }}>·</span>
+                        <span style={{ fontSize: '11px', color: 'var(--neutral-400)' }}>
+                          {unitPrice.toLocaleString()} FCFA / {unitMinutes} min
+                        </span>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <span style={{ fontSize: '18px', fontWeight: 900, color: 'var(--primary-600)' }}>
+                          {activeCost.toLocaleString()}
+                        </span>
+                        <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--neutral-500)', marginLeft: '4px' }}>FCFA</span>
+                      </div>
+                    </div>
                   </div>
-                  
-                  <div className="input-group">
-                    <label className="input-label">Ou saisir une durée personnalisée (minutes)</label>
-                    <input 
-                      type="number" 
-                      className="input-field" 
-                      placeholder="Ex: 90" 
-                      value={customDuration}
-                      onChange={(e) => setCustomDuration(e.target.value)}
-                      min={1}
-                    />
-                  </div>
-                </div>
-              )}
+                );
+              })()}
 
               {launchMode === 'abonnement' && (
                 <div style={{
@@ -847,8 +1078,8 @@ export const CaissierDashboard: React.FC = () => {
                   lineHeight: 1.5
                 }}>
                   {(() => {
-                    const client = mockClients.find(c => c.username === selectedClient);
-                    if (client && client.hasAbonnement) {
+                    const client = activeClients.find(c => c.username === selectedClient);
+                    if (client && client.abonnementType !== 'Aucun') {
                       return `✓ Abonnement "${client.abonnementType}" détecté. Temps disponible : ${client.abonnementRemainingTime} minutes.`;
                     }
                     return `⚠️ Ce client ne dispose pas d'un abonnement actif.`;
@@ -857,7 +1088,7 @@ export const CaissierDashboard: React.FC = () => {
               )}
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-4)' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => { setShowLaunchModal(null); setIsGuest(true); setGuestName(''); }}>Annuler</button>
+                <button type="button" className="btn btn-secondary" onClick={() => { setShowLaunchModal(null); setIsGuest(true); setClientSearch(''); }}>Annuler</button>
                 <button type="submit" className="btn btn-black">Activer le poste</button>
               </div>
             </form>

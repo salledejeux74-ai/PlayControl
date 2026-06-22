@@ -28,13 +28,17 @@ import { CaissierDashboard } from './pages/caissier/Dashboard';
 import { CaissierClients } from './pages/caissier/Clients';
 import { CaissierEncaissements } from './pages/caissier/Encaissements';
 
+// Portail Joueur
+import { JoueurPortal } from './pages/joueur/JoueurPortal';
+
 function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          {/* Public Route */}
+          {/* Public Routes */}
           <Route path="/login" element={<Login />} />
+          <Route path="/joueur" element={<JoueurPortal />} />
           <Route path="/superadmin/login" element={<Navigate to="/login" replace />} />
 
           {/* Super Admin Private Routes */}
