@@ -57,11 +57,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Repli vers les métadonnées si profil non trouvé
       const meta = authData.user.user_metadata || {};
       role = (meta.role || 'caissier') as UserRole;
-      name = meta.name || name;
+      name = (meta.name && meta.name !== 'Utilisateur') ? meta.name : (authData.user.email || 'Utilisateur');
       salleId = meta.salle_id || undefined;
     } else {
       role = profile.role as UserRole;
-      name = profile.name || name;
+      name = (profile.name && profile.name !== 'Utilisateur') ? profile.name : (authData.user.email || 'Utilisateur');
       salleId = profile.salle_id || undefined;
     }
 

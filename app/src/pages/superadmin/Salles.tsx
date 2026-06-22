@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Gamepad2, Plus, Search, Edit2, Trash2, Power, PowerOff, MapPin, Phone } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
 
 interface Salle {
   id: string;
@@ -17,16 +18,51 @@ interface Salle {
 }
 
 export const Salles: React.FC = () => {
-  const [salles, setSalles] = useState<Salle[]>([
-    { id: '1', name: 'Gaming Zone - Yaoundé', location: 'Bastos, Yaoundé', latitude: 3.8833, longitude: 11.5167, owner: 'Marc Kemajou', phone: '+237 699 99 99 99', postesCount: 20, status: 'active', monthlyRevenue: 2450000 },
-    { id: '2', name: 'Arena Games - Douala', location: 'Bonapriso, Douala', latitude: 4.0483, longitude: 9.7043, owner: 'Alain Tchakounté', phone: '+237 677 77 77 77', postesCount: 20, status: 'active', monthlyRevenue: 1980000 },
-    { id: '3', name: 'Play Safe - Garoua', location: 'Plateau, Garoua', latitude: 9.3000, longitude: 13.4000, owner: 'Amadou Bello', phone: '+237 655 55 55 55', postesCount: 15, status: 'active', monthlyRevenue: 1250000 },
-    { id: '4', name: 'Nexus Gaming - Bafoussam', location: 'Marché A, Bafoussam', latitude: 5.4772, longitude: 10.4172, owner: 'Serge Fotso', phone: '+237 688 88 88 88', postesCount: 12, status: 'suspended', monthlyRevenue: 0 },
-  ]);
+  const [salles, setSalles] = useState<Salle[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchSalles = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('salles')
+        .select('*')
+        .order('name', { ascending: true });
+      
+      if (error) throw error;
+      
+      if (data) {
+        const formatted = data.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          location: s.location,
+          latitude: s.latitude ? Number(s.latitude) : undefined,
+          longitude: s.longitude ? Number(s.longitude) : undefined,
+          owner: s.owner,
+          ownerPhoto: s.owner_photo || undefined,
+          phone: s.phone,
+          postesCount: s.postes_count,
+          status: s.status,
+          monthlyRevenue: s.monthly_revenue
+        }));
+        setSalles(formatted);
+      }
+    } catch (err: any) {
+      console.error("Erreur chargement salles:", err.message);
+      showToastMsg("Erreur lors du chargement des salles: " + err.message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSalles();
+  }, []);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Form fields
   const [newSalleName, setNewSalleName] = useState('');
@@ -35,6 +71,7 @@ export const Salles: React.FC = () => {
   const [newSalleLng, setNewSalleLng] = useState<string>('');
   const [newSalleOwner, setNewSalleOwner] = useState('');
   const [newSalleOwnerPhoto, setNewSalleOwnerPhoto] = useState<string>('');
+  const [newSalleOwnerPhotoFile, setNewSalleOwnerPhotoFile] = useState<File | null>(null);
   const [phoneCountryCode, setPhoneCountryCode] = useState<string>('+237');
   const [rawPhoneNum, setRawPhoneNum] = useState<string>('');
   const [newSallePostes, setNewSallePostes] = useState(10);
@@ -53,6 +90,7 @@ export const Salles: React.FC = () => {
   const [editSalleLng, setEditSalleLng] = useState<string>('');
   const [editSalleOwner, setEditSalleOwner] = useState('');
   const [editSalleOwnerPhoto, setEditSalleOwnerPhoto] = useState<string>('');
+  const [editSalleOwnerPhotoFile, setEditSalleOwnerPhotoFile] = useState<File | null>(null);
   const [editPhoneCountryCode, setEditPhoneCountryCode] = useState<string>('+237');
   const [editRawPhoneNum, setEditRawPhoneNum] = useState<string>('');
   const [editSallePostes, setEditSallePostes] = useState(10);
@@ -105,9 +143,15 @@ export const Salles: React.FC = () => {
     openConfirm(
       "Supprimer la salle",
       `Êtes-vous sûr de vouloir supprimer définitivement la salle "${name}" ? Toutes ses configurations physiques, personnels, et données de revenus seront effacées de manière irréversible.`,
-      () => {
-        setSalles(salles.filter(s => s.id !== id));
-        showToastMsg(`La salle "${name}" a été supprimée avec succès.`);
+      async () => {
+        try {
+          const { error } = await supabase.from('salles').delete().eq('id', id);
+          if (error) throw error;
+          setSalles(salles.filter(s => s.id !== id));
+          showToastMsg(`La salle "${name}" a été supprimée avec succès.`);
+        } catch (err: any) {
+          showToastMsg("Erreur suppression: " + err.message, "error");
+        }
       },
       'danger'
     );
@@ -120,15 +164,24 @@ export const Salles: React.FC = () => {
       isSuspended 
         ? `Êtes-vous sûr de vouloir suspendre la licence de la salle "${name}" ? Tous les gérants, caissiers et clients de cette salle seront déconnectés et ne pourront plus s'authentifier.` 
         : `Êtes-vous sûr de vouloir réactiver la licence de la salle "${name}" ?`,
-      () => {
-        setSalles(salles.map(salle => {
-          if (salle.id === id) {
-            const newStatus = salle.status === 'active' ? 'suspended' : 'active';
-            return { ...salle, status: newStatus, monthlyRevenue: newStatus === 'suspended' ? 0 : 1200000 };
-          }
-          return salle;
-        }));
-        showToastMsg(`La salle "${name}" a été ${isSuspended ? 'suspendue' : 'réactivée'} avec succès.`);
+      async () => {
+        try {
+          const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
+          const { error } = await supabase
+            .from('salles')
+            .update({ status: newStatus })
+            .eq('id', id);
+          if (error) throw error;
+          setSalles(salles.map(salle => {
+            if (salle.id === id) {
+              return { ...salle, status: newStatus, monthlyRevenue: newStatus === 'suspended' ? 0 : salle.monthlyRevenue };
+            }
+            return salle;
+          }));
+          showToastMsg(`La salle "${name}" a été ${isSuspended ? 'suspendue' : 'réactivée'} avec succès.`);
+        } catch (err: any) {
+          showToastMsg("Erreur modification statut: " + err.message, "error");
+        }
       },
       isSuspended ? 'danger' : 'info'
     );
@@ -272,6 +325,7 @@ export const Salles: React.FC = () => {
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setNewSalleOwnerPhotoFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
         setNewSalleOwnerPhoto(reader.result as string);
@@ -280,42 +334,89 @@ export const Salles: React.FC = () => {
     }
   };
 
-  const handleAddSalle = (e: React.FormEvent) => {
+  const handleAddSalle = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSalleName || !newSalleOwner) return;
 
     const finalPhone = rawPhoneNum ? `${phoneCountryCode} ${rawPhoneNum.trim()}` : 'Non spécifié';
+    let uploadedPhotoUrl = null;
 
-    const newSalle: Salle = {
-      id: String(salles.length + 1),
-      name: newSalleName,
-      location: newSalleLocation || 'Non spécifiée',
-      latitude: newSalleLat ? Number(newSalleLat) : undefined,
-      longitude: newSalleLng ? Number(newSalleLng) : undefined,
-      owner: newSalleOwner,
-      ownerPhoto: newSalleOwnerPhoto || undefined,
-      phone: finalPhone,
-      postesCount: Number(newSallePostes),
-      status: 'active',
-      monthlyRevenue: 0
-    };
+    try {
+      setIsSubmitting(true);
+      if (newSalleOwnerPhotoFile) {
+        const fileExt = newSalleOwnerPhotoFile.name.split('.').pop();
+        const fileName = `${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
+        const filePath = `owners/${fileName}`;
 
-    setSalles([...salles, newSalle]);
-    setShowAddModal(false);
-    showToastMsg(`La salle "${newSalleName}" a été créée avec succès.`);
-    
-    // Reset Form
-    setNewSalleName('');
-    setNewSalleLocation('');
-    setNewSalleLat('');
-    setNewSalleLng('');
-    setNewSalleOwner('');
-    setNewSalleOwnerPhoto('');
-    setPhoneCountryCode('+237');
-    setRawPhoneNum('');
-    setNewSallePostes(10);
-    setSuggestions([]);
-    setShowSuggestions(false);
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('salles')
+          .upload(filePath, newSalleOwnerPhotoFile);
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('salles')
+          .getPublicUrl(filePath);
+
+        uploadedPhotoUrl = publicUrl;
+      }
+
+      const { data, error } = await supabase
+        .from('salles')
+        .insert({
+          name: newSalleName,
+          location: newSalleLocation || 'Non spécifiée',
+          latitude: newSalleLat ? Number(newSalleLat) : null,
+          longitude: newSalleLng ? Number(newSalleLng) : null,
+          owner: newSalleOwner,
+          owner_photo: uploadedPhotoUrl || null,
+          phone: finalPhone,
+          postes_count: Number(newSallePostes),
+          status: 'active',
+          monthly_revenue: 0
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+
+      if (data) {
+        const addedSalle: Salle = {
+          id: data.id,
+          name: data.name,
+          location: data.location,
+          latitude: data.latitude ? Number(data.latitude) : undefined,
+          longitude: data.longitude ? Number(data.longitude) : undefined,
+          owner: data.owner,
+          ownerPhoto: data.owner_photo || undefined,
+          phone: data.phone,
+          postesCount: data.postes_count,
+          status: data.status as 'active' | 'suspended',
+          monthlyRevenue: data.monthly_revenue
+        };
+        setSalles([...salles, addedSalle]);
+        showToastMsg(`La salle "${newSalleName}" a été créée avec succès.`);
+        
+        // Reset Form
+        setNewSalleName('');
+        setNewSalleLocation('');
+        setNewSalleLat('');
+        setNewSalleLng('');
+        setNewSalleOwner('');
+        setNewSalleOwnerPhoto('');
+        setNewSalleOwnerPhotoFile(null);
+        setPhoneCountryCode('+237');
+        setRawPhoneNum('');
+        setNewSallePostes(10);
+        setSuggestions([]);
+        setShowSuggestions(false);
+        setShowAddModal(false);
+      }
+    } catch (err: any) {
+      showToastMsg("Erreur lors de la création: " + err.message, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleEditClick = (salle: Salle) => {
@@ -346,6 +447,7 @@ export const Salles: React.FC = () => {
   const handleEditPhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setEditSalleOwnerPhotoFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
         setEditSalleOwnerPhoto(reader.result as string);
@@ -354,31 +456,74 @@ export const Salles: React.FC = () => {
     }
   };
 
-  const handleEditSalleSubmit = (e: React.FormEvent) => {
+  const handleEditSalleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingSalle || !editSalleName || !editSalleOwner) return;
 
     const finalPhone = editRawPhoneNum ? `${editPhoneCountryCode} ${editRawPhoneNum.trim()}` : 'Non spécifié';
+    let uploadedPhotoUrl = editSalleOwnerPhoto;
 
-    setSalles(salles.map(s => {
-      if (s.id === editingSalle.id) {
-        return {
-          ...s,
+    try {
+      setIsSubmitting(true);
+      if (editSalleOwnerPhotoFile) {
+        const fileExt = editSalleOwnerPhotoFile.name.split('.').pop();
+        const fileName = `${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
+        const filePath = `owners/${fileName}`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('salles')
+          .upload(filePath, editSalleOwnerPhotoFile);
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('salles')
+          .getPublicUrl(filePath);
+
+        uploadedPhotoUrl = publicUrl;
+      }
+
+      const { error } = await supabase
+        .from('salles')
+        .update({
           name: editSalleName,
           location: editSalleLocation || 'Non spécifiée',
-          latitude: editSalleLat ? Number(editSalleLat) : undefined,
-          longitude: editSalleLng ? Number(editSalleLng) : undefined,
+          latitude: editSalleLat ? Number(editSalleLat) : null,
+          longitude: editSalleLng ? Number(editSalleLng) : null,
           owner: editSalleOwner,
-          ownerPhoto: editSalleOwnerPhoto || undefined,
+          owner_photo: uploadedPhotoUrl || null,
           phone: finalPhone,
-          postesCount: Number(editSallePostes),
-        };
-      }
-      return s;
-    }));
+          postes_count: Number(editSallePostes),
+        })
+        .eq('id', editingSalle.id);
+      
+      if (error) throw error;
 
-    setEditingSalle(null);
-    showToastMsg(`La salle "${editSalleName}" a été modifiée avec succès.`);
+      setSalles(salles.map(s => {
+        if (s.id === editingSalle.id) {
+          return {
+            ...s,
+            name: editSalleName,
+            location: editSalleLocation || 'Non spécifiée',
+            latitude: editSalleLat ? Number(editSalleLat) : undefined,
+            longitude: editSalleLng ? Number(editSalleLng) : undefined,
+            owner: editSalleOwner,
+            ownerPhoto: uploadedPhotoUrl || undefined,
+            phone: finalPhone,
+            postesCount: Number(editSallePostes),
+          };
+        }
+        return s;
+      }));
+
+      setEditingSalle(null);
+      setEditSalleOwnerPhotoFile(null);
+      showToastMsg(`La salle "${editSalleName}" a été modifiée avec succès.`);
+    } catch (err: any) {
+      showToastMsg("Erreur lors de la modification: " + err.message, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const geocodeEditAddress = async (address: string) => {
@@ -513,6 +658,15 @@ export const Salles: React.FC = () => {
     salle.owner.toLowerCase().includes(searchTerm.toLowerCase()) ||
     salle.location.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '200px', flexDirection: 'column', gap: 'var(--space-3)' }}>
+        <div style={{ width: '32px', height: '32px', borderRadius: '50%', border: '3px solid var(--neutral-200)', borderTopColor: 'var(--primary-500)', animation: 'spin 1s linear infinite' }} />
+        <span style={{ fontSize: 'var(--font-sm)', color: 'var(--neutral-500)', fontWeight: 600 }}>Chargement des salles...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
@@ -920,8 +1074,10 @@ export const Salles: React.FC = () => {
 
               {/* Action buttons */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-4)', borderTop: '1px solid var(--neutral-200)', paddingTop: 'var(--space-4)' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setShowAddModal(false)}>Annuler</button>
-                <button type="submit" className="btn btn-black" disabled={isGeocoding}>Créer la salle</button>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowAddModal(false)} disabled={isSubmitting}>Annuler</button>
+                <button type="submit" className="btn btn-black" disabled={isGeocoding || isSubmitting}>
+                  {isSubmitting ? 'Création en cours...' : 'Créer la salle'}
+                </button>
               </div>
             </form>
           </div>
@@ -1161,8 +1317,10 @@ export const Salles: React.FC = () => {
 
               {/* Action buttons */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-4)', borderTop: '1px solid var(--neutral-200)', paddingTop: 'var(--space-4)' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setEditingSalle(null)}>Annuler</button>
-                <button type="submit" className="btn btn-black" disabled={isGeocoding}>Enregistrer les modifications</button>
+                <button type="button" className="btn btn-secondary" onClick={() => setEditingSalle(null)} disabled={isSubmitting}>Annuler</button>
+                <button type="submit" className="btn btn-black" disabled={isGeocoding || isSubmitting}>
+                  {isSubmitting ? 'Enregistrement...' : 'Enregistrer les modifications'}
+                </button>
               </div>
             </form>
           </div>

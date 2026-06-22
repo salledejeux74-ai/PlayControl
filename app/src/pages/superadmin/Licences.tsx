@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { FileKey, Plus, Search, RefreshCw, Clipboard, Check, Calendar, HelpCircle } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
 
 interface Licence {
   id: string;
@@ -11,19 +12,21 @@ interface Licence {
   status: 'active' | 'warning' | 'expired';
 }
 
+interface DB_Salle {
+  id: string;
+  name: string;
+}
+
 export const Licences: React.FC = () => {
-  const [licences, setLicences] = useState<Licence[]>([
-    { id: '1', key: 'PLAY-KZ8Y-98X1-24PL', salleName: 'Gaming Zone - Yaoundé', activatedAt: '2026-01-01', expiresAt: '2027-01-01', status: 'active' },
-    { id: '2', key: 'PLAY-QA7M-12D9-98WW', salleName: 'Arena Games - Douala', activatedAt: '2026-02-15', expiresAt: '2027-02-15', status: 'active' },
-    { id: '3', key: 'PLAY-LB9R-43K2-09MM', salleName: 'Play Safe - Garoua', activatedAt: '2025-06-18', expiresAt: '2026-06-18', status: 'warning' },
-    { id: '4', key: 'PLAY-NX5S-55X9-11AA', salleName: 'Nexus Gaming - Bafoussam', activatedAt: '2025-04-10', expiresAt: '2026-04-10', status: 'expired' },
-  ]);
+  const [licences, setLicences] = useState<Licence[]>([]);
+  const [salles, setSalles] = useState<DB_Salle[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
 
-  const [selectedSalle, setSelectedSalle] = useState('Gaming Zone - Yaoundé');
+  const [selectedSalle, setSelectedSalle] = useState('');
   const [validityMonths, setValidityMonths] = useState(12);
   const [generatedKey, setGeneratedKey] = useState('');
 
@@ -35,6 +38,50 @@ export const Licences: React.FC = () => {
       setToast(null);
     }, 3000);
   };
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const { data: sallesData, error: sallesError } = await supabase
+        .from('salles')
+        .select('id, name')
+        .order('name');
+        
+      if (sallesError) throw sallesError;
+      setSalles(sallesData || []);
+      if (sallesData && sallesData.length > 0) {
+        setSelectedSalle(sallesData[0].id);
+      }
+
+      const { data: licencesData, error: licencesError } = await supabase
+        .from('licences')
+        .select('*, salles(name)')
+        .order('expires_at', { ascending: true });
+        
+      if (licencesError) throw licencesError;
+      
+      if (licencesData) {
+        const formatted = licencesData.map((l: any) => ({
+          id: l.id,
+          key: l.key,
+          salleName: l.salles ? l.salles.name : 'Non assignée',
+          activatedAt: l.activated_at?.split('T')[0] || '',
+          expiresAt: l.expires_at?.split('T')[0] || '',
+          status: l.status as 'active' | 'warning' | 'expired'
+        }));
+        setLicences(formatted);
+      }
+    } catch (err: any) {
+      console.error(err);
+      showToastMsg("Erreur de chargement: " + err.message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   // Custom confirmation modal
   const [confirmModal, setConfirmModal] = useState<{
@@ -56,49 +103,87 @@ export const Licences: React.FC = () => {
     setGeneratedKey(key);
   };
 
-  const handleCreateLicence = (e: React.FormEvent) => {
+  const handleCreateLicence = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!generatedKey) return;
+    if (!generatedKey || !selectedSalle) return;
 
-    const activatedAt = new Date().toISOString().split('T')[0];
+    const activatedAt = new Date().toISOString();
     const expires = new Date();
     expires.setMonth(expires.getMonth() + Number(validityMonths));
-    const expiresAt = expires.toISOString().split('T')[0];
+    const expiresAt = expires.toISOString();
 
-    const newLicence: Licence = {
-      id: String(licences.length + 1),
-      key: generatedKey,
-      salleName: selectedSalle,
-      activatedAt,
-      expiresAt,
-      status: 'active'
-    };
+    try {
+      const { data, error } = await supabase
+        .from('licences')
+        .insert({
+          key: generatedKey,
+          salle_id: selectedSalle,
+          activated_at: activatedAt,
+          expires_at: expiresAt,
+          status: 'active'
+        })
+        .select('*, salles(name)')
+        .single();
 
-    setLicences([newLicence, ...licences]);
-    setShowAddModal(false);
-    setGeneratedKey('');
-    showToastMsg(`La licence pour la salle "${selectedSalle}" a été générée et activée.`);
+      if (error) throw error;
+
+      if (data) {
+        const newLicence: Licence = {
+          id: data.id,
+          key: data.key,
+          salleName: data.salles ? data.salles.name : 'Non assignée',
+          activatedAt: data.activated_at?.split('T')[0] || '',
+          expiresAt: data.expires_at?.split('T')[0] || '',
+          status: data.status as 'active' | 'warning' | 'expired'
+        };
+
+        setLicences([newLicence, ...licences]);
+        setShowAddModal(false);
+        setGeneratedKey('');
+        showToastMsg(`La licence pour la salle "${newLicence.salleName}" a été générée et activée.`);
+      }
+    } catch (err: any) {
+      showToastMsg("Erreur lors de la création de la licence: " + err.message, "error");
+    }
   };
 
   const handleRenewLicense = (id: string, salleName: string) => {
+    const lic = licences.find(l => l.id === id);
+    if (!lic) return;
+
     openConfirm(
       "Renouveler la licence",
       `Êtes-vous sûr de vouloir prolonger de 12 mois supplémentaires la validité de la licence logicielle associée à la salle "${salleName}" ?`,
-      () => {
-        setLicences(licences.map(l => {
-          if (l.id === id) {
-            const currentExpiry = new Date(l.expiresAt);
-            currentExpiry.setMonth(currentExpiry.getMonth() + 12);
-            const newExpiresAt = currentExpiry.toISOString().split('T')[0];
-            return {
-              ...l,
-              expiresAt: newExpiresAt,
+      async () => {
+        try {
+          const currentExpiry = new Date(lic.expiresAt);
+          currentExpiry.setMonth(currentExpiry.getMonth() + 12);
+          const newExpiresAt = currentExpiry.toISOString();
+
+          const { error } = await supabase
+            .from('licences')
+            .update({
+              expires_at: newExpiresAt,
               status: 'active'
-            };
-          }
-          return l;
-        }));
-        showToastMsg(`La licence de la salle "${salleName}" a été prolongée d'un an avec succès.`);
+            })
+            .eq('id', id);
+
+          if (error) throw error;
+
+          setLicences(licences.map(l => {
+            if (l.id === id) {
+              return {
+                ...l,
+                expiresAt: newExpiresAt.split('T')[0],
+                status: 'active'
+              };
+            }
+            return l;
+          }));
+          showToastMsg(`La licence de la salle "${salleName}" a été prolongée d'un an avec succès.`);
+        } catch (err: any) {
+          showToastMsg("Erreur de renouvellement: " + err.message, "error");
+        }
       },
       'info'
     );
@@ -114,6 +199,15 @@ export const Licences: React.FC = () => {
     licence.salleName.toLowerCase().includes(searchTerm.toLowerCase()) ||
     licence.key.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '200px', flexDirection: 'column', gap: 'var(--space-3)' }}>
+        <div style={{ width: '32px', height: '32px', borderRadius: '50%', border: '3px solid var(--neutral-200)', borderTopColor: 'var(--primary-500)', animation: 'spin 1s linear infinite' }} />
+        <span style={{ fontSize: 'var(--font-sm)', color: 'var(--neutral-500)', fontWeight: 600 }}>Chargement des licences...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
@@ -328,11 +422,15 @@ export const Licences: React.FC = () => {
                   className="select-field"
                   value={selectedSalle}
                   onChange={(e) => setSelectedSalle(e.target.value)}
+                  required
                 >
-                  <option value="Gaming Zone - Yaoundé">Gaming Zone - Yaoundé</option>
-                  <option value="Arena Games - Douala">Arena Games - Douala</option>
-                  <option value="Play Safe - Garoua">Play Safe - Garoua</option>
-                  <option value="Nexus Gaming - Bafoussam">Nexus Gaming - Bafoussam</option>
+                  {salles.length > 0 ? (
+                    salles.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))
+                  ) : (
+                    <option value="">Aucune salle disponible</option>
+                  )}
                 </select>
               </div>
 

@@ -1,29 +1,150 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Gamepad2, DollarSign, PlayCircle, Users, 
   AlertTriangle, RefreshCw, CheckCircle, TrendingUp
 } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
 
 export const SuperAdminDashboard: React.FC = () => {
+  const [loading, setLoading] = useState(true);
+  const [sallesCount, setSallesCount] = useState(0);
+  const [clientsCount, setClientsCount] = useState(0);
+  const [activeSessions, setActiveSessions] = useState(0);
+  const [totalRevenue, setTotalRevenue] = useState(0);
+  const [salleRevenues, setSalleRevenues] = useState<{ name: string; revenue: number; percentage: number; activePostes: string }[]>([]);
+  const [activeAlerts, setActiveAlerts] = useState<{ id: number; message: string; time: string; type: string }[]>([]);
+
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      
+      // 1. Salles
+      const { data: sallesData } = await supabase.from('salles').select('*');
+      setSallesCount(sallesData?.length || 0);
+
+      // 2. Clients
+      const { data: clientsData } = await supabase.from('clients').select('id');
+      setClientsCount(clientsData?.length || 0);
+
+      // 3. Postes (active sessions)
+      const { data: postesData } = await supabase.from('postes').select('id, status');
+      setActiveSessions(postesData?.filter((p: any) => p.status === 'occupe').length || 0);
+
+      // 4. Transactions, Shifts, Profiles
+      const { data: txData } = await supabase.from('transactions').select('amount, shift_id');
+      const { data: shiftsData } = await supabase.from('shifts').select('id, cashier_id');
+      const { data: profilesData } = await supabase.from('profiles').select('id, salle_id');
+
+      const sumRevenue = txData ? txData.reduce((sum, tx) => sum + tx.amount, 0) : 0;
+      setTotalRevenue(sumRevenue);
+
+      // Compute revenues per Salle
+      const revenueBySalle: Record<string, number> = {};
+      txData?.forEach(tx => {
+        const shift = shiftsData?.find(s => s.id === tx.shift_id);
+        const profile = shift ? profilesData?.find(p => p.id === shift.cashier_id) : null;
+        const salleId = profile?.salle_id;
+        if (salleId) {
+          revenueBySalle[salleId] = (revenueBySalle[salleId] || 0) + tx.amount;
+        }
+      });
+
+      // Format top salles
+      if (sallesData) {
+        let maxRev = 1;
+        const mappedSalles = sallesData.map(s => {
+          const rev = revenueBySalle[s.id] || s.monthly_revenue || 0;
+          if (rev > maxRev) maxRev = rev;
+          return {
+            name: s.name,
+            revenue: rev,
+            activePostes: `${postesData?.filter((p: any) => p.status === 'occupe').length || 0}/${s.postes_count}`,
+            rawRevenue: rev
+          };
+        });
+
+        const formattedSalles = mappedSalles
+          .map(s => ({
+            name: s.name,
+            revenue: s.revenue,
+            percentage: Math.round((s.rawRevenue / maxRev) * 100),
+            activePostes: s.activePostes
+          }))
+          .sort((a, b) => b.revenue - a.revenue);
+
+        setSalleRevenues(formattedSalles);
+      }
+
+      // 5. Compute Alerts
+      const { data: logsData } = await supabase
+        .from('activity_logs')
+        .select('*')
+        .eq('severity', 'critical')
+        .limit(3);
+
+      const alertsList: typeof activeAlerts = [];
+      if (logsData) {
+        logsData.forEach((l: any, idx: number) => {
+          alertsList.push({
+            id: idx + 1,
+            message: `${l.action} (${l.salle})`,
+            time: l.timestamp ? new Date(l.timestamp).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : 'Tout de suite',
+            type: 'error'
+          });
+        });
+      }
+
+      const { data: licencesData } = await supabase
+        .from('licences')
+        .select('*, salles(name)')
+        .eq('status', 'warning')
+        .limit(2);
+
+      if (licencesData) {
+        licencesData.forEach((lic: any, idx: number) => {
+          alertsList.push({
+            id: alertsList.length + 1,
+            message: `Licence expirante (Salle : ${lic.salles?.name || 'Inconnue'})`,
+            time: 'Avertissement',
+            type: 'warning'
+          });
+        });
+      }
+
+      if (alertsList.length === 0) {
+        alertsList.push(
+          { id: 1, message: "Aucune alerte critique signalée", time: "Actuel", type: "info" }
+        );
+      }
+
+      setActiveAlerts(alertsList);
+
+    } catch (err: any) {
+      console.error("Error loading dashboard data:", err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
   const kpis = [
-    { label: 'Salles Partenaires', value: '14', change: '+2 ce mois', icon: <Gamepad2 size={22} />, color: 'var(--primary-500)', bg: 'var(--primary-50)' },
-    { label: 'Revenus Globaux (Mensuel)', value: '8 450 000 FCFA', change: '+12.4%', icon: <DollarSign size={22} />, color: 'var(--success-700)', bg: 'var(--success-50)' },
-    { label: 'Sessions Lancées (24h)', value: '342', change: '+8%', icon: <PlayCircle size={22} />, color: 'var(--accent-500)', bg: 'var(--accent-50)' },
-    { label: 'Clients Actifs', value: '1 240', change: '+45 nouveaux', icon: <Users size={22} />, color: 'var(--info-500)', bg: 'var(--info-100)' },
+    { label: 'Salles Partenaires', value: String(sallesCount), change: 'Actif', icon: <Gamepad2 size={22} />, color: 'var(--primary-500)', bg: 'var(--primary-50)' },
+    { label: 'Revenus Globaux (Cumulé)', value: `${totalRevenue.toLocaleString()} FCFA`, change: 'Total', icon: <DollarSign size={22} />, color: 'var(--success-700)', bg: 'var(--success-50)' },
+    { label: 'Sessions Actives', value: String(activeSessions), change: 'Temps réel', icon: <PlayCircle size={22} />, color: 'var(--accent-500)', bg: 'var(--accent-50)' },
+    { label: 'Clients Actifs', value: String(clientsCount), change: 'Membres', icon: <Users size={22} />, color: 'var(--info-500)', bg: 'var(--info-100)' },
   ];
 
-  const salleRevenues = [
-    { name: 'Gaming Zone - Yaoundé', revenue: 2450000, percentage: 85, activePostes: '18/20' },
-    { name: 'Arena Games - Douala', revenue: 1980000, percentage: 72, activePostes: '14/20' },
-    { name: 'Play Safe - Garoua', revenue: 1250000, percentage: 55, activePostes: '9/15' },
-    { name: 'Nexus Gaming - Bafoussam', revenue: 1100000, percentage: 48, activePostes: '6/12' },
-  ];
-
-  const activeAlerts = [
-    { id: 1, message: "Licence expirable dans 2 jours (Salle: Play Safe)", time: "Il y a 10 min", type: "warning" },
-    { id: 2, message: "Perte de connexion intermittente LAN (Salle: Nexus Gaming)", time: "Il y a 32 min", type: "error" },
-    { id: 3, message: "Tentative de connexion admin suspecte bloquée", time: "Il y a 1h 15m", type: "info" },
-  ];
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '200px', flexDirection: 'column', gap: 'var(--space-3)' }}>
+        <div style={{ width: '32px', height: '32px', borderRadius: '50%', border: '3px solid var(--neutral-200)', borderTopColor: 'var(--primary-500)', animation: 'spin 1s linear infinite' }} />
+        <span style={{ fontSize: 'var(--font-sm)', color: 'var(--neutral-500)', fontWeight: 600 }}>Chargement du tableau de bord...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-8)' }}>
@@ -37,7 +158,7 @@ export const SuperAdminDashboard: React.FC = () => {
             Supervision globale des licences et performances de vos salles de jeux.
           </p>
         </div>
-        <button className="btn btn-secondary" style={{ gap: 'var(--space-2)' }}>
+        <button className="btn btn-secondary" onClick={fetchDashboardData} style={{ gap: 'var(--space-2)' }}>
           <RefreshCw size={16} /> Actualiser
         </button>
       </div>

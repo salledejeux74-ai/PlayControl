@@ -44,7 +44,7 @@ export const SuperAdminLayout: React.FC = () => {
   const menuItems = [
     { to: '/superadmin', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
     { to: '/superadmin/salles', icon: <Gamepad2 size={20} />, label: 'Gestion des Salles' },
-    { to: '/superadmin/admins', icon: <Users size={20} />, label: 'Gestion des Propriétaires' },
+    { to: '/superadmin/admins', icon: <Users size={20} />, label: 'Gestion des Gérants' },
     { to: '/superadmin/licences', icon: <FileKey size={20} />, label: 'Gestion des Licences' },
     { to: '/superadmin/stats', icon: <BarChart3 size={20} />, label: 'Statistiques' },
     { to: '/superadmin/logs', icon: <FileSpreadsheet size={20} />, label: 'Journaux d\'activité' },

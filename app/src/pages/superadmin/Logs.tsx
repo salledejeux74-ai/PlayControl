@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, ShieldCheck, User, Gamepad2, ShieldAlert } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
 
 interface LogEntry {
   id: string;
@@ -15,15 +16,42 @@ interface LogEntry {
 export const Logs: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [severityFilter, setSeverityFilter] = useState('all');
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const logs: LogEntry[] = [
-    { id: '1', actor: 'Alexandre (SA)', role: 'Super Admin', action: 'Génération de clé de licence (PLAY-KZ8Y-98X1)', salle: 'SuperAdmin System', ip: '192.168.1.100', timestamp: '2026-06-15 17:45:12', severity: 'info' },
-    { id: '2', actor: 'Marc Kemajou', role: 'Admin Salle', action: 'Création du compte caissier (Sophie)', salle: 'Gaming Zone - Yaoundé', ip: '192.168.1.105', timestamp: '2026-06-15 16:20:00', severity: 'info' },
-    { id: '3', actor: 'Sophie (Caisse)', role: 'Caissier', action: 'Suppression forcée de session (Poste 4)', salle: 'Gaming Zone - Yaoundé', ip: '192.168.1.112', timestamp: '2026-06-15 15:10:45', severity: 'warning' },
-    { id: '4', actor: 'Alexandre (SA)', role: 'Super Admin', action: 'Suspension de la salle (Nexus Gaming)', salle: 'Nexus Gaming - Bafoussam', ip: '192.168.1.100', timestamp: '2026-06-15 14:00:32', severity: 'critical' },
-    { id: '5', actor: 'System Autopack', role: 'Auto Task', action: 'Restauration de base de données locale réussie', salle: 'Arena Games - Douala', ip: '127.0.0.1', timestamp: '2026-06-15 03:00:00', severity: 'info' },
-    { id: '6', actor: 'Marc Kemajou', role: 'Admin Salle', action: 'Modification de la grille tarifaire standard', salle: 'Gaming Zone - Yaoundé', ip: '192.168.1.105', timestamp: '2026-06-14 18:32:11', severity: 'warning' },
-  ];
+  const fetchLogs = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('activity_logs')
+        .select('*')
+        .order('timestamp', { ascending: false });
+
+      if (error) throw error;
+
+      if (data) {
+        const formatted = data.map((l: any) => ({
+          id: l.id,
+          actor: l.actor,
+          role: l.role,
+          action: l.action,
+          salle: l.salle,
+          ip: l.ip || 'Unknown',
+          timestamp: l.timestamp ? new Date(l.timestamp).toLocaleString('fr-FR') : '',
+          severity: l.severity as 'info' | 'warning' | 'critical'
+        }));
+        setLogs(formatted);
+      }
+    } catch (err: any) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchLogs();
+  }, []);
 
   const filteredLogs = logs.filter(log => {
     const matchesSearch = 
@@ -35,6 +63,15 @@ export const Logs: React.FC = () => {
     
     return matchesSearch && matchesSeverity;
   });
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '200px', flexDirection: 'column', gap: 'var(--space-3)' }}>
+        <div style={{ width: '32px', height: '32px', borderRadius: '50%', border: '3px solid var(--neutral-200)', borderTopColor: 'var(--primary-500)', animation: 'spin 1s linear infinite' }} />
+        <span style={{ fontSize: 'var(--font-sm)', color: 'var(--neutral-500)', fontWeight: 600 }}>Chargement des journaux d'activité...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
