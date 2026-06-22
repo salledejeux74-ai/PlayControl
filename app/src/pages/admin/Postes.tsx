@@ -4,6 +4,7 @@ import {
   Gamepad2, Plus, Search, 
   Trash2, Play, Ban, ArrowRightLeft, Clock, Edit2
 } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
 
 interface GameStation {
   id: string;
@@ -11,10 +12,12 @@ interface GameStation {
   type: string;
   characteristics: string;
   smartPlugIp: string;
-  status: 'libre' | 'occupe' | 'hors-service';
+  status: 'libre' | 'en-attente' | 'occupe' | 'hors-service';
   clientName?: string;
+  sessionCode?: string;
   minutesRemaining?: number;
   totalDuration?: number; // In minutes
+  updatedAt?: string;
 }
 
 interface MaterialType {
@@ -25,11 +28,24 @@ interface MaterialType {
   durationMinutes: number;
 }
 
-const DEFAULT_MATERIAL_TYPES: MaterialType[] = [
-  { id: '1', type: 'ps5_vip', label: 'Console PS5 (Zone VIP)', price: 1500, durationMinutes: 60 },
-  { id: '2', type: 'ps5_standard', label: 'Console PS5 (Zone Standard)', price: 1000, durationMinutes: 60 },
-  { id: '3', type: 'ps4_standard', label: 'Console PS4 (Zone Standard)', price: 800, durationMinutes: 60 },
-];
+interface MemberClient {
+  id: string;
+  username: string;
+  fullName: string;
+  phone: string;
+  balance: number;
+  abonnementType: 'Aucun' | 'Journalier' | 'Hebdomadaire' | 'Mensuel' | 'VIP';
+  abonnementExpiration: string | null;
+  status: 'active' | 'suspended';
+  abonnementRemainingTime?: number;
+}
+
+interface AbonnementPackage {
+  id: string;
+  type: 'Journalier' | 'Hebdomadaire' | 'Mensuel' | 'VIP';
+  price: number;
+  duration_hours: number;
+}
 
 const formatRemainingTime = (minutes: number): string => {
   if (minutes < 0) return '0 min';
@@ -50,67 +66,36 @@ const formatPriceTag = (typeKey: string, materialTypes: MaterialType[]): string 
   return `${mType.price} FCFA / ${mType.durationMinutes} min`;
 };
 
+const mapPosteFromDb = (p: any): GameStation => ({
+  id: p.id,
+  name: p.name,
+  type: p.type,
+  characteristics: p.characteristics || '',
+  smartPlugIp: p.smart_plug_ip || '',
+  status: p.status,
+  clientName: p.client_name || undefined,
+  sessionCode: p.session_code || undefined,
+  minutesRemaining: p.minutes_remaining !== null ? p.minutes_remaining : undefined,
+  totalDuration: p.total_duration !== null ? p.total_duration : undefined,
+  updatedAt: p.updated_at
+});
 
-
-const getMaterialTypes = (): MaterialType[] => {
-  const saved = localStorage.getItem('playcontrol_material_types');
-  if (saved) {
-    try {
-      return JSON.parse(saved);
-    } catch (e) {
-      // ignore
-    }
-  }
-  return DEFAULT_MATERIAL_TYPES;
+// Génère un code de session à 6 caractères alphanumériques en majuscules
+const generateSessionCode = (): string => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 };
 
-interface MockClient {
-  id: string;
-  username: string;
-  fullName: string;
-  balance: number;
-  hasAbonnement: boolean;
-  abonnementType?: string;
-  abonnementRemainingTime?: number; // In minutes
-}
-
 export const AdminPostes: React.FC = () => {
-  const [postes, setPostes] = useState<GameStation[]>(() => {
-    const saved = localStorage.getItem('playcontrol_postes');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        // ignore
-      }
-    }
-    return [
-      { id: '1', name: 'PS5 - VIP #1', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Manette DualSense Edge', smartPlugIp: '192.168.1.101', status: 'occupe', clientName: 'Gamer_Pro', minutesRemaining: 45, totalDuration: 120 },
-      { id: '2', name: 'PS5 - Standard #2', type: 'ps5_standard', characteristics: 'Écran 1080p, Manette standard', smartPlugIp: '192.168.1.102', status: 'libre' },
-      { id: '3', name: 'PS5 - Standard #3', type: 'ps5_standard', characteristics: 'Écran 1080p, Manette standard', smartPlugIp: '192.168.1.103', status: 'hors-service' },
-      { id: '4', name: 'PS5 - VIP #2', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Canapé Confort VIP', smartPlugIp: '192.168.1.104', status: 'occupe', clientName: 'Marc_K', minutesRemaining: 120, totalDuration: 180 },
-      { id: '5', name: 'PS4 - Standard #1', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.105', status: 'libre' },
-      { id: '6', name: 'PS4 - Standard #2', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.106', status: 'libre' },
-      { id: '7', name: 'PS5 - VIP #3', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Canapé Confort VIP', smartPlugIp: '192.168.1.107', status: 'occupe', clientName: 'Alain_T', minutesRemaining: 15, totalDuration: 60 },
-      { id: '8', name: 'PS4 - Standard #3', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.108', status: 'libre' },
-    ];
-  });
-
-  useEffect(() => {
-    localStorage.setItem('playcontrol_postes', JSON.stringify(postes));
-  }, [postes]);
-
-  const mockClients: MockClient[] = [
-    { id: '1', username: 'Gamer_Pro', fullName: 'Arthur Mbe', balance: 5400, hasAbonnement: true, abonnementType: 'VIP', abonnementRemainingTime: 240 },
-    { id: '2', username: 'Marc_K', fullName: 'Marc Kemajou', balance: 12500, hasAbonnement: false },
-    { id: '3', username: 'Alain_T', fullName: 'Alain Tchakounté', balance: 750, hasAbonnement: false },
-    { id: '4', username: 'Serge_F', fullName: 'Serge Fotso', balance: 3200, hasAbonnement: true, abonnementType: 'Hebdomadaire', abonnementRemainingTime: 90 },
-    { id: '5', username: 'Amadou_B', fullName: 'Amadou Bello', balance: 0, hasAbonnement: false },
-  ];
+  const [postes, setPostes] = useState<GameStation[]>([]);
+  const [materialTypes, setMaterialTypes] = useState<MaterialType[]>([]);
+  const [dbClients, setDbClients] = useState<MemberClient[]>([]);
+  const [dbPackages, setDbPackages] = useState<AbonnementPackage[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Filters
   const [filterType, setFilterType] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'libre' | 'occupe' | 'hors-service'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'libre' | 'en-attente' | 'occupe' | 'hors-service'>('all');
   const [searchTerm, setSearchTerm] = useState('');
 
   // Modals state
@@ -119,9 +104,8 @@ export const AdminPostes: React.FC = () => {
   const [showTransferModal, setShowTransferModal] = useState<GameStation | null>(null);
   const [showExtendModal, setShowExtendModal] = useState<GameStation | null>(null);
 
-  // Dynamic material types
-  const materialTypes = getMaterialTypes();
-  const defaultTypeKey = materialTypes[0]?.type || 'console';
+  // Default type key fallback
+  const defaultTypeKey = materialTypes[0]?.type || 'ps5_standard';
 
   // Form states
   const [newName, setNewName] = useState('');
@@ -138,12 +122,12 @@ export const AdminPostes: React.FC = () => {
   const [editSmartPlugIp, setEditSmartPlugIp] = useState('');
 
   // Session Launch states
-  const [selectedClient, setSelectedClient] = useState(mockClients[1].username); // Default to Marc_K
+  const [clientSearch, setClientSearch] = useState('');
+  const [selectedClient, setSelectedClient] = useState('');
   const [launchMode, setLaunchMode] = useState<'time' | 'abonnement'>('time');
   const [selectedDuration, setSelectedDuration] = useState<number>(60); // 60 minutes
   const [customDuration, setCustomDuration] = useState<string>('');
   const [isGuest, setIsGuest] = useState(true);
-  const [guestName, setGuestName] = useState('');
 
   // Toast notifications
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -167,28 +151,147 @@ export const AdminPostes: React.FC = () => {
     setConfirmModal({ isOpen: true, title, message, onConfirm, type });
   };
 
-  // Live Timer Effect
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const { data: mtData, error: mtError } = await supabase
+        .from('material_types')
+        .select('*')
+        .order('created_at', { ascending: true });
+      if (mtError) throw mtError;
+      
+      const mappedMaterialTypes = (mtData || []).map(r => ({
+        id: r.id,
+        type: r.type,
+        label: r.label,
+        price: r.price,
+        durationMinutes: r.duration_minutes
+      }));
+      setMaterialTypes(mappedMaterialTypes);
+      if (mappedMaterialTypes.length > 0) {
+        setNewType(mappedMaterialTypes[0].type);
+        setEditType(mappedMaterialTypes[0].type);
+      }
+
+      const { data: clData, error: clError } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('status', 'active');
+      if (clError) throw clError;
+      
+      const mappedClients = (clData || []).map(c => ({
+        id: c.id,
+        username: c.username,
+        fullName: c.full_name,
+        phone: c.phone || '',
+        balance: c.balance,
+        abonnementType: c.abonnement_type,
+        abonnementExpiration: c.abonnement_expiration,
+        status: c.status,
+        abonnementRemainingTime: c.abonnement_remaining_time
+      }));
+      setDbClients(mappedClients);
+      if (mappedClients.length > 0) {
+        setSelectedClient(mappedClients[0].username);
+      }
+
+      const { data: pkgData, error: pkgError } = await supabase
+        .from('abonnement_packages')
+        .select('*');
+      if (pkgError) throw pkgError;
+      setDbPackages(pkgData || []);
+
+      const { data: ptData, error: ptError } = await supabase
+        .from('postes')
+        .select('*')
+        .order('name', { ascending: true });
+      if (ptError) throw ptError;
+      
+      setPostes((ptData || []).map(mapPosteFromDb));
+    } catch (err: any) {
+      showToastMsg(err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      setPostes(prevPostes => 
-        prevPostes.map(post => {
-          if (post.status === 'occupe' && post.minutesRemaining !== undefined) {
-            if (post.minutesRemaining <= 1) {
-              // Time's up! Return to libre
-              showToastMsg(`La session sur "${post.name}" pour "${post.clientName}" est terminée.`);
-              return { ...post, status: 'libre', clientName: undefined, minutesRemaining: undefined, totalDuration: undefined };
-            }
-            return { ...post, minutesRemaining: post.minutesRemaining - 1 };
+    fetchData();
+
+    // Subscribe to postes changes
+    const channel = supabase
+      .channel('realtime-postes-admin')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'postes' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newPost = mapPosteFromDb(payload.new);
+            setPostes(prev => {
+              if (prev.some(p => p.id === newPost.id)) return prev;
+              return [...prev, newPost].sort((a, b) => a.name.localeCompare(b.name));
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = mapPosteFromDb(payload.new);
+            setPostes(prev => prev.map(p => p.id === updated.id ? updated : p));
+          } else if (payload.eventType === 'DELETE') {
+            setPostes(prev => prev.filter(p => p.id !== payload.old.id));
           }
-          return post;
-        })
-      );
-    }, 60000); // Update every minute
-    return () => clearInterval(interval);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
+  // Safe Live Timer Effect for database
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const occupied = postes.filter(p => p.status === 'occupe' && p.minutesRemaining !== undefined);
+      for (const post of occupied) {
+        const now = new Date().getTime();
+        const updatedTime = post.updatedAt ? new Date(post.updatedAt).getTime() : 0;
+        
+        // If updated less than 55 seconds ago, skip to prevent double decrement
+        if (now - updatedTime < 55000) {
+          continue;
+        }
+
+        const nextMin = (post.minutesRemaining || 0) - 1;
+        if (nextMin <= 0) {
+          // Time's up! Return to libre in database
+          await supabase
+            .from('postes')
+            .update({
+              status: 'libre',
+              client_name: null,
+              session_code: null,
+              minutes_remaining: null,
+              total_duration: null
+            })
+            .eq('id', post.id);
+          
+          showToastMsg(`La session sur "${post.name}" pour "${post.clientName}" est terminée.`);
+        } else {
+          // Decrement by 1 in database
+          await supabase
+            .from('postes')
+            .update({
+              minutes_remaining: nextMin
+            })
+            .eq('id', post.id);
+        }
+      }
+    }, 60000); // Check every minute
+    
+    return () => clearInterval(interval);
+  }, [postes]);
+
+
   // Creation of gaming station
-  const handleCreatePoste = (e: React.FormEvent) => {
+  const handleCreatePoste = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName) return;
 
@@ -198,16 +301,21 @@ export const AdminPostes: React.FC = () => {
       return;
     }
 
-    const newPost: GameStation = {
-      id: String(postes.length + 1),
-      name: newName,
-      type: newType,
-      characteristics: newCharacteristics || 'Aucune description',
-      smartPlugIp: newSmartPlugIp || '192.168.1.100',
-      status: 'libre'
-    };
+    const { error } = await supabase
+      .from('postes')
+      .insert({
+        name: newName,
+        type: newType,
+        characteristics: newCharacteristics || 'Aucune description',
+        smart_plug_ip: newSmartPlugIp || '192.168.1.100',
+        status: 'libre'
+      });
 
-    setPostes([...postes, newPost]);
+    if (error) {
+      showToastMsg(error.message, 'error');
+      return;
+    }
+
     setShowAddModal(false);
     setNewName('');
     setNewCharacteristics('');
@@ -224,7 +332,7 @@ export const AdminPostes: React.FC = () => {
     setEditSmartPlugIp(post.smartPlugIp);
   };
 
-  const handleSaveEditPoste = (e: React.FormEvent) => {
+  const handleSaveEditPoste = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showEditModal) return;
     if (!editName) return;
@@ -235,18 +343,20 @@ export const AdminPostes: React.FC = () => {
       return;
     }
 
-    setPostes(postes.map(p => {
-      if (p.id === showEditModal.id) {
-        return {
-          ...p,
-          name: editName,
-          type: editType,
-          characteristics: editCharacteristics,
-          smartPlugIp: editSmartPlugIp
-        };
-      }
-      return p;
-    }));
+    const { error } = await supabase
+      .from('postes')
+      .update({
+        name: editName,
+        type: editType,
+        characteristics: editCharacteristics,
+        smart_plug_ip: editSmartPlugIp
+      })
+      .eq('id', showEditModal.id);
+
+    if (error) {
+      showToastMsg(error.message, 'error');
+      return;
+    }
 
     setShowEditModal(null);
     setIsEditMode(false);
@@ -258,8 +368,17 @@ export const AdminPostes: React.FC = () => {
     openConfirm(
       "Supprimer le poste",
       `Êtes-vous sûr de vouloir supprimer définitivement le poste "${name}" ? Cette action effacera ses configurations.`,
-      () => {
-        setPostes(postes.filter(p => p.id !== id));
+      async () => {
+        const { error } = await supabase
+          .from('postes')
+          .delete()
+          .eq('id', id);
+
+        if (error) {
+          showToastMsg(error.message, 'error');
+          return;
+        }
+
         showToastMsg(`Le poste "${name}" a été supprimé.`);
       },
       'danger'
@@ -267,18 +386,28 @@ export const AdminPostes: React.FC = () => {
   };
 
   // Out of Service Toggle
-  const handleToggleOutOfService = (id: string, name: string, currentStatus: 'libre' | 'occupe' | 'hors-service') => {
+  const handleToggleOutOfService = (id: string, name: string, currentStatus: GameStation['status']) => {
     const isHS = currentStatus === 'hors-service';
     openConfirm(
       isHS ? "Remettre en service" : "Mettre hors service",
       isHS ? `Voulez-vous remettre en service le poste "${name}" ?` : `Voulez-vous suspendre temporairement le poste "${name}" pour maintenance ou panne ?`,
-      () => {
-        setPostes(postes.map(p => {
-          if (p.id === id) {
-            return { ...p, status: isHS ? 'libre' : 'hors-service', clientName: undefined, minutesRemaining: undefined };
-          }
-          return p;
-        }));
+      async () => {
+        const { error } = await supabase
+          .from('postes')
+          .update({
+            status: isHS ? 'libre' : 'hors-service',
+            client_name: null,
+            session_code: null,
+            minutes_remaining: null,
+            total_duration: null
+          })
+          .eq('id', id);
+
+        if (error) {
+          showToastMsg(error.message, 'error');
+          return;
+        }
+
         showToastMsg(`Le poste "${name}" est désormais ${isHS ? 'Libre' : 'Hors Service'}.`);
       },
       isHS ? 'info' : 'warning'
@@ -286,24 +415,21 @@ export const AdminPostes: React.FC = () => {
   };
 
   // Launch Session
-  const handleLaunchSession = (e: React.FormEvent) => {
+  const handleLaunchSession = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showLaunchModal) return;
 
     let finalClientName = '';
     let finalDuration = 0;
 
-    const duration = customDuration ? Number(customDuration) : selectedDuration;
+    const duration = selectedDuration;
 
     if (isGuest) {
-      if (!guestName.trim()) {
-        showToastMsg("Veuillez saisir le nom du joueur invité.", "error");
-        return;
-      }
-      finalClientName = guestName.trim();
+      // Pour un invité temporaire : pas de nom requis, on génère un identifiant
+      finalClientName = `Invité-${Date.now().toString(36).toUpperCase().slice(-4)}`;
       finalDuration = duration;
     } else {
-      const targetClient = mockClients.find(c => c.username === selectedClient);
+      const targetClient = dbClients.find(c => c.username === selectedClient);
       if (!targetClient) return;
 
       const targetType = materialTypes.find(t => t.type === showLaunchModal.type);
@@ -316,47 +442,131 @@ export const AdminPostes: React.FC = () => {
         return;
       }
 
-      if (launchMode === 'abonnement' && (!targetClient.hasAbonnement || (targetClient.abonnementRemainingTime || 0) <= 0)) {
+      if (launchMode === 'abonnement' && (targetClient.abonnementType === 'Aucun' || (targetClient.abonnementRemainingTime || 0) <= 0)) {
         showToastMsg(`Le client ${targetClient.fullName} ne dispose pas d'un abonnement actif.`, 'error');
         return;
       }
 
       finalClientName = targetClient.username;
       finalDuration = launchMode === 'time' ? duration : (targetClient.abonnementRemainingTime || 60);
+
+      // Deduct client balance/minutes in database
+      if (launchMode === 'time') {
+        const { error: clErr } = await supabase
+          .from('clients')
+          .update({ balance: targetClient.balance - cost })
+          .eq('id', targetClient.id);
+        if (clErr) {
+          showToastMsg(clErr.message, 'error');
+          return;
+        }
+      } else {
+        const { error: clErr } = await supabase
+          .from('clients')
+          .update({ abonnement_remaining_time: Math.max(0, (targetClient.abonnementRemainingTime || 0) - finalDuration) })
+          .eq('id', targetClient.id);
+        if (clErr) {
+          showToastMsg(clErr.message, 'error');
+          return;
+        }
+      }
     }
 
-    setPostes(postes.map(p => {
-      if (p.id === showLaunchModal.id) {
-        return {
-          ...p,
-          status: 'occupe',
-          clientName: finalClientName,
-          minutesRemaining: finalDuration,
-          totalDuration: finalDuration
-        };
-      }
-      return p;
-    }));
+    const code = generateSessionCode();
 
+    const { error } = await supabase
+      .from('postes')
+      .update({
+        status: 'en-attente',
+        client_name: finalClientName,
+        session_code: code,
+        minutes_remaining: finalDuration,
+        total_duration: finalDuration
+      })
+      .eq('id', showLaunchModal.id);
+
+    if (error) {
+      // Rollback
+      if (!isGuest) {
+        const targetClient = dbClients.find(c => c.username === selectedClient);
+        if (targetClient) {
+          if (launchMode === 'time') {
+            const targetType = materialTypes.find(t => t.type === showLaunchModal.type);
+            const rate = targetType ? targetType.price : 1000;
+            const rateDuration = targetType ? targetType.durationMinutes : 60;
+            const cost = Math.ceil((rate / rateDuration) * duration);
+            await supabase.from('clients').update({ balance: targetClient.balance }).eq('id', targetClient.id);
+          } else {
+            await supabase.from('clients').update({ abonnement_remaining_time: targetClient.abonnementRemainingTime }).eq('id', targetClient.id);
+          }
+        }
+      }
+      showToastMsg(error.message, 'error');
+      return;
+    }
+
+    showToastMsg(`Code généré pour "${finalClientName}" sur "${showLaunchModal.name}" : ${code}`);
     setShowLaunchModal(null);
-    setCustomDuration('');
-    setGuestName('');
     setIsGuest(true);
-    showToastMsg(`Session lancée sur "${showLaunchModal.name}" pour "${finalClientName}".`);
+    setClientSearch('');
   };
 
-  // Terminate Session early
+  // Terminate Session early (handles refunding balance or subscription time)
   const handleEndSession = (id: string, name: string, clientName: string) => {
+    const post = postes.find(p => p.id === id);
+    if (!post) return;
+
     openConfirm(
-      "Terminer la session",
-      `Êtes-vous sûr de vouloir forcer la fin de la session de "${clientName}" sur le poste "${name}" ?`,
-      () => {
-        setPostes(postes.map(p => {
-          if (p.id === id) {
-            return { ...p, status: 'libre', clientName: undefined, minutesRemaining: undefined, totalDuration: undefined };
+      "Annuler / Terminer la session",
+      `Êtes-vous sûr de vouloir annuler la session de "${clientName}" sur le poste "${name}" ?`,
+      async () => {
+        // Refund logic for members
+        if (post.clientName && !post.clientName.startsWith('Invité-')) {
+          const { data: clData } = await supabase
+            .from('clients')
+            .select('*')
+            .eq('username', post.clientName)
+            .maybeSingle();
+
+          if (clData) {
+            const minutesToRefund = post.minutesRemaining || 0;
+            if (minutesToRefund > 0) {
+              const targetType = materialTypes.find(t => t.type === post.type);
+              const rate = targetType ? targetType.price : 1000;
+              const rateDuration = targetType ? targetType.durationMinutes : 60;
+
+              if (clData.abonnement_type !== 'Aucun') {
+                await supabase
+                  .from('clients')
+                  .update({ abonnement_remaining_time: (clData.abonnement_remaining_time || 0) + minutesToRefund })
+                  .eq('id', clData.id);
+              } else {
+                const refundCost = Math.floor((rate / rateDuration) * minutesToRefund);
+                await supabase
+                  .from('clients')
+                  .update({ balance: clData.balance + refundCost })
+                  .eq('id', clData.id);
+              }
+            }
           }
-          return p;
-        }));
+        }
+
+        const { error } = await supabase
+          .from('postes')
+          .update({
+            status: 'libre',
+            client_name: null,
+            session_code: null,
+            minutes_remaining: null,
+            total_duration: null
+          })
+          .eq('id', id);
+
+        if (error) {
+          showToastMsg(error.message, 'error');
+          return;
+        }
+
         showToastMsg(`La session sur "${name}" a été arrêtée.`);
       },
       'danger'
@@ -364,22 +574,70 @@ export const AdminPostes: React.FC = () => {
   };
 
   // Extend Session
-  const handleExtendSession = (e: React.FormEvent) => {
+  const handleExtendSession = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showExtendModal || showExtendModal.minutesRemaining === undefined) return;
 
     const extMinutes = customDuration ? Number(customDuration) : selectedDuration;
 
-    setPostes(postes.map(p => {
-      if (p.id === showExtendModal.id) {
-        return {
-          ...p,
-          minutesRemaining: (p.minutesRemaining || 0) + extMinutes,
-          totalDuration: (p.totalDuration || 0) + extMinutes
-        };
+    if (showExtendModal.clientName && !showExtendModal.clientName.startsWith('Invité-')) {
+      const { data: clData } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('username', showExtendModal.clientName)
+        .maybeSingle();
+
+      if (!clData) {
+        showToastMsg("Impossible de charger les données du membre.", "error");
+        return;
       }
-      return p;
-    }));
+
+      const targetType = materialTypes.find(t => t.type === showExtendModal.type);
+      const rate = targetType ? targetType.price : 1000;
+      const rateDuration = targetType ? targetType.durationMinutes : 60;
+      const cost = Math.ceil((rate / rateDuration) * extMinutes);
+
+      if (clData.abonnement_type !== 'Aucun') {
+        if ((clData.abonnement_remaining_time || 0) < extMinutes) {
+          showToastMsg(`Temps d'abonnement insuffisant (${clData.abonnement_remaining_time} min restantes).`, 'error');
+          return;
+        }
+        const { error: clErr } = await supabase
+          .from('clients')
+          .update({ abonnement_remaining_time: clData.abonnement_remaining_time - extMinutes })
+          .eq('id', clData.id);
+        if (clErr) {
+          showToastMsg(clErr.message, 'error');
+          return;
+        }
+      } else {
+        if (clData.balance < cost) {
+          showToastMsg(`Solde insuffisant pour prolonger. Requis : ${cost} FCFA. Solde : ${clData.balance} FCFA.`, 'error');
+          return;
+        }
+        const { error: clErr } = await supabase
+          .from('clients')
+          .update({ balance: clData.balance - cost })
+          .eq('id', clData.id);
+        if (clErr) {
+          showToastMsg(clErr.message, 'error');
+          return;
+        }
+      }
+    }
+
+    const { error } = await supabase
+      .from('postes')
+      .update({
+        minutes_remaining: (showExtendModal.minutesRemaining || 0) + extMinutes,
+        total_duration: (showExtendModal.totalDuration || 0) + extMinutes
+      })
+      .eq('id', showExtendModal.id);
+
+    if (error) {
+      showToastMsg(error.message, 'error');
+      return;
+    }
 
     setShowExtendModal(null);
     setCustomDuration('');
@@ -388,35 +646,50 @@ export const AdminPostes: React.FC = () => {
 
   // Transfer Session
   const [selectedTransferPosteId, setSelectedTransferPosteId] = useState('');
-  const handleTransferSession = (e: React.FormEvent) => {
+  const handleTransferSession = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showTransferModal || !selectedTransferPosteId) return;
 
     const targetPoste = postes.find(p => p.id === selectedTransferPosteId);
     if (!targetPoste) return;
 
-    setPostes(postes.map(p => {
-      // Free the old one
-      if (p.id === showTransferModal.id) {
-        return { ...p, status: 'libre', clientName: undefined, minutesRemaining: undefined, totalDuration: undefined };
-      }
-      // Populate the new one
-      if (p.id === selectedTransferPosteId) {
-        return {
-          ...p,
-          status: 'occupe',
-          clientName: showTransferModal.clientName,
-          minutesRemaining: showTransferModal.minutesRemaining,
-          totalDuration: showTransferModal.totalDuration
-        };
-      }
-      return p;
-    }));
+    const { error: err1 } = await supabase
+      .from('postes')
+      .update({
+        status: showTransferModal.status,
+        client_name: showTransferModal.clientName || null,
+        session_code: showTransferModal.sessionCode || null,
+        minutes_remaining: showTransferModal.minutesRemaining || null,
+        total_duration: showTransferModal.totalDuration || null
+      })
+      .eq('id', selectedTransferPosteId);
+
+    if (err1) {
+      showToastMsg(err1.message, 'error');
+      return;
+    }
+
+    const { error: err2 } = await supabase
+      .from('postes')
+      .update({
+        status: 'libre',
+        client_name: null,
+        session_code: null,
+        minutes_remaining: null,
+        total_duration: null
+      })
+      .eq('id', showTransferModal.id);
+
+    if (err2) {
+      showToastMsg(err2.message, 'error');
+      return;
+    }
 
     setShowTransferModal(null);
     setSelectedTransferPosteId('');
     showToastMsg(`Session de "${showTransferModal.clientName}" transférée de "${showTransferModal.name}" vers "${targetPoste.name}".`);
   };
+
 
   // Filters application
   const filteredPostes = postes.filter(p => {
@@ -996,14 +1269,13 @@ export const AdminPostes: React.FC = () => {
           <div className="card animate-fade-in" style={{ width: '100%', maxWidth: '460px', padding: 'var(--space-8)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
               <h3 style={{ fontSize: 'var(--font-lg)', fontWeight: 700 }}>
-                Lancer une Session sur {showLaunchModal.name}
+                Lancer Session - {showLaunchModal.name}
               </h3>
-              <button className="btn btn-ghost" onClick={() => { setShowLaunchModal(null); setIsGuest(true); setGuestName(''); }}>✕</button>
+              <button className="btn btn-ghost" onClick={() => { setShowLaunchModal(null); setIsGuest(true); setClientSearch(''); }}>✕</button>
             </div>
 
             <form onSubmit={handleLaunchSession} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
               
-              {/* Guest player toggle */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                 <input 
                   id="is-guest-checkbox"
@@ -1021,36 +1293,139 @@ export const AdminPostes: React.FC = () => {
               </div>
 
               {isGuest ? (
-                <div className="input-group">
-                  <label className="input-label">Nom du joueur temporaire</label>
-                  <input 
-                    type="text" 
-                    className="input-field" 
-                    placeholder="Ex: Invité_PS5"
-                    value={guestName}
-                    onChange={(e) => setGuestName(e.target.value)}
-                    required
-                  />
+                /* Pour un invité : pas de nom requis, juste la durée */
+                <div style={{
+                  backgroundColor: 'var(--neutral-50)',
+                  border: '1px solid var(--neutral-200)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: 'var(--space-3) var(--space-4)',
+                  fontSize: 'var(--font-sm)',
+                  color: 'var(--neutral-500)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 'var(--space-2)',
+                }}>
+                  <span style={{ fontSize: '16px' }}>ℹ️</span>
+                  <span>Un code de session sera généré automatiquement. Saisissez simplement la durée de jeu ci-dessous.</span>
                 </div>
               ) : (
-                /* Select Client */
                 <div className="input-group">
-                  <label className="input-label">Sélectionner le membre client</label>
-                  <select 
-                    className="select-field"
-                    value={selectedClient}
-                    onChange={(e) => setSelectedClient(e.target.value)}
-                  >
-                    {mockClients.map(c => (
-                      <option key={c.id} value={c.username}>
-                        {c.fullName} (@{c.username}) — Solde: {c.balance} FCFA {c.hasAbonnement ? `(Pass ${c.abonnementType})` : ''}
-                      </option>
-                    ))}
-                  </select>
+                  <label className="input-label">Rechercher et sélectionner un client</label>
+                  {/* Champ de recherche */}
+                  <div style={{ position: 'relative', marginBottom: 'var(--space-2)' }}>
+                    <input
+                      type="text"
+                      className="input-field"
+                      placeholder="Rechercher par nom ou pseudo..."
+                      value={clientSearch}
+                      onChange={e => setClientSearch(e.target.value)}
+                      style={{ paddingLeft: '36px', fontSize: 'var(--font-sm)' }}
+                    />
+                    <span style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: 'var(--neutral-400)', fontSize: '14px' }}>🔍</span>
+                  </div>
+                  {/* Liste filtrée */}
+                  <div style={{
+                    maxHeight: '160px',
+                    overflowY: 'auto',
+                    border: '1.5px solid var(--neutral-200)',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'var(--neutral-0)',
+                  }}>
+                    {dbClients
+                      .filter(c =>
+                        c.fullName.toLowerCase().includes(clientSearch.toLowerCase()) ||
+                        c.username.toLowerCase().includes(clientSearch.toLowerCase())
+                      )
+                      .map((c, idx, arr) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => setSelectedClient(c.username)}
+                          style={{
+                            width: '100%',
+                            textAlign: 'left',
+                            padding: 'var(--space-3) var(--space-4)',
+                            background: selectedClient === c.username ? 'var(--primary-50)' : 'transparent',
+                            border: 'none',
+                            borderBottom: idx < arr.length - 1 ? '1px solid var(--neutral-100)' : 'none',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 'var(--space-3)',
+                            transition: 'background var(--transition-fast)',
+                          }}
+                          onMouseEnter={e => { if (selectedClient !== c.username) e.currentTarget.style.background = 'var(--neutral-50)'; }}
+                          onMouseLeave={e => { if (selectedClient !== c.username) e.currentTarget.style.background = 'transparent'; }}
+                        >
+                          {/* Avatar initiales */}
+                          <div style={{
+                            width: '30px', height: '30px', borderRadius: '50%',
+                            background: selectedClient === c.username ? 'var(--gradient-primary)' : 'var(--neutral-200)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: '11px', fontWeight: 700, color: selectedClient === c.username ? 'white' : 'var(--neutral-600)',
+                            flexShrink: 0,
+                          }}>
+                            {c.fullName.charAt(0).toUpperCase()}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, fontSize: 'var(--font-sm)', color: 'var(--neutral-800)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {c.fullName}
+                            </div>
+                            <div style={{ fontSize: '11px', color: 'var(--neutral-400)' }}>@{c.username}</div>
+                          </div>
+                          {selectedClient === c.username && (
+                            <span style={{ color: 'var(--primary-500)', fontSize: '14px', flexShrink: 0 }}>✓</span>
+                          )}
+                        </button>
+                      ))
+                    }
+                    {dbClients.filter(c =>
+                      c.fullName.toLowerCase().includes(clientSearch.toLowerCase()) ||
+                      c.username.toLowerCase().includes(clientSearch.toLowerCase())
+                    ).length === 0 && (
+                      <div style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--neutral-400)', fontSize: 'var(--font-sm)' }}>
+                        Aucun client trouvé
+                      </div>
+                    )}
+                  </div>
+                  {/* Infos du client sélectionné */}
+                  {(() => {
+                    const sel = dbClients.find(c => c.username === selectedClient);
+                    if (!sel) return null;
+                    return (
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: 'var(--space-2) var(--space-3)',
+                        background: 'var(--neutral-50)',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--neutral-200)',
+                        marginTop: 'var(--space-2)',
+                        gap: 'var(--space-3)',
+                        flexWrap: 'wrap',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                          <span style={{ fontSize: '12px', color: 'var(--neutral-500)', fontWeight: 500 }}>Solde :</span>
+                          <span style={{
+                            fontWeight: 800,
+                            fontSize: 'var(--font-sm)',
+                            color: sel.balance > 0 ? 'var(--success-600)' : 'var(--danger-500)',
+                          }}>
+                            {sel.balance.toLocaleString()} FCFA
+                          </span>
+                        </div>
+                        {sel.abonnementType !== 'Aucun' && (
+                          <span className="badge badge-warning" style={{ fontSize: '10px' }}>
+                            ⭐ Pass {sel.abonnementType} — {sel.abonnementRemainingTime} min
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
-              {/* Mode Selection */}
               {!isGuest && (
                 <div style={{ display: 'flex', gap: 'var(--space-4)', margin: 'var(--space-1) 0' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: 'var(--font-sm)' }}>
@@ -1076,49 +1451,79 @@ export const AdminPostes: React.FC = () => {
                 </div>
               )}
 
-              {/* Mode: Time Durations */}
-              {launchMode === 'time' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                  <label className="input-label">Durée de jeu</label>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-2)' }}>
-                    <button 
-                      type="button" 
-                      className={`btn ${selectedDuration === 30 && !customDuration ? 'btn-black' : 'btn-secondary'} btn-sm`}
-                      onClick={() => { setSelectedDuration(30); setCustomDuration(''); }}
-                    >
-                      30 min
-                    </button>
-                    <button 
-                      type="button" 
-                      className={`btn ${selectedDuration === 60 && !customDuration ? 'btn-black' : 'btn-secondary'} btn-sm`}
-                      onClick={() => { setSelectedDuration(60); setCustomDuration(''); }}
-                    >
-                      1 heure
-                    </button>
-                    <button 
-                      type="button" 
-                      className={`btn ${selectedDuration === 120 && !customDuration ? 'btn-black' : 'btn-secondary'} btn-sm`}
-                      onClick={() => { setSelectedDuration(120); setCustomDuration(''); }}
-                    >
-                      2 heures
-                    </button>
-                  </div>
-                  
-                  <div className="input-group">
-                    <label className="input-label">Ou saisir une durée personnalisée (minutes)</label>
-                    <input 
-                      type="number" 
-                      className="input-field" 
-                      placeholder="Ex: 90" 
-                      value={customDuration}
-                      onChange={(e) => setCustomDuration(e.target.value)}
-                      min={1}
-                    />
-                  </div>
-                </div>
-              )}
+              {launchMode === 'time' && (() => {
+                const mType = materialTypes.find(t => t.type === showLaunchModal.type);
+                const unitPrice   = mType?.price ?? 0;
+                const unitMinutes = mType?.durationMinutes ?? 60;
 
-              {/* Mode: Abonnement info */}
+                const calcCost = (mins: number) =>
+                  Math.ceil((unitPrice / unitMinutes) * mins);
+
+                const activeCost = calcCost(selectedDuration);
+
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                    <label className="input-label">Durée de jeu</label>
+
+                    {/* Boutons preset avec prix */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-2)' }}>
+                      {[
+                        { mins: 30,  label: '30 min' },
+                        { mins: 60,  label: '1 heure' },
+                        { mins: 120, label: '2 heures' },
+                      ].map(({ mins, label }) => {
+                        const cost = calcCost(mins);
+                        const isActive = selectedDuration === mins;
+                        return (
+                          <button
+                            key={mins}
+                            type="button"
+                            className={`btn ${isActive ? 'btn-black' : 'btn-secondary'} btn-sm`}
+                            onClick={() => setSelectedDuration(mins)}
+                            style={{ flexDirection: 'column', gap: '2px', height: 'auto', padding: 'var(--space-2) var(--space-1)' }}
+                          >
+                            <span style={{ fontWeight: 700 }}>{label}</span>
+                            <span style={{
+                              fontSize: '10px',
+                              opacity: 0.85,
+                              fontWeight: 600,
+                              color: isActive ? 'rgba(255,255,255,0.8)' : 'var(--primary-500)',
+                            }}>
+                              {cost.toLocaleString()} FCFA
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Récapitulatif du coût */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: 'var(--space-3) var(--space-4)',
+                      background: 'var(--gradient-subtle)',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--primary-100)',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', color: 'var(--neutral-600)', fontSize: 'var(--font-sm)' }}>
+                        ⏱️ <span>{selectedDuration} min</span>
+                        <span style={{ color: 'var(--neutral-300)' }}>·</span>
+                        <span style={{ fontSize: '11px', color: 'var(--neutral-400)' }}>
+                          {unitPrice.toLocaleString()} FCFA / {unitMinutes} min
+                        </span>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <span style={{ fontSize: '18px', fontWeight: 900, color: 'var(--primary-600)' }}>
+                          {activeCost.toLocaleString()}
+                        </span>
+                        <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--neutral-500)', marginLeft: '4px' }}>FCFA</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {launchMode === 'abonnement' && (
                 <div style={{
                   backgroundColor: 'var(--primary-50)',
@@ -1129,17 +1534,17 @@ export const AdminPostes: React.FC = () => {
                   lineHeight: 1.5
                 }}>
                   {(() => {
-                    const client = mockClients.find(c => c.username === selectedClient);
-                    if (client && client.hasAbonnement) {
-                      return `✓ Abonnement "${client.abonnementType}" détecté. Temps disponible : ${client.abonnementRemainingTime} minutes. Aucun débit de solde ne sera effectué.`;
+                    const client = dbClients.find(c => c.username === selectedClient);
+                    if (client && client.abonnementType !== 'Aucun') {
+                      return `✓ Abonnement "${client.abonnementType}" détecté. Temps disponible : ${client.abonnementRemainingTime} minutes.`;
                     }
-                    return `⚠️ Ce client ne dispose pas d'un abonnement actif. Veuillez recharger son solde ou choisir le mode Temps Libre.`;
+                    return `⚠️ Ce client ne dispose pas d'un abonnement actif.`;
                   })()}
                 </div>
               )}
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-4)' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => { setShowLaunchModal(null); setIsGuest(true); setGuestName(''); }}>Annuler</button>
+                <button type="button" className="btn btn-secondary" onClick={() => { setShowLaunchModal(null); setIsGuest(true); setClientSearch(''); }}>Annuler</button>
                 <button type="submit" className="btn btn-black">Activer le poste</button>
               </div>
             </form>

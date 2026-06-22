@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Save, ShieldAlert, Landmark } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
 
 interface SalleSettings {
   salleName: string;
@@ -9,46 +10,72 @@ interface SalleSettings {
   rawPhoneNum: string;
 }
 
-const DEFAULT_SETTINGS: SalleSettings = {
-  salleName: 'Zone Gaming Center',
-  salleAddress: 'Bastos, Yaoundé, Cameroun',
-  phoneCountryCode: '+237',
-  rawPhoneNum: '699999999'
-};
-
-const getActiveSettings = (): SalleSettings => {
-  const saved = localStorage.getItem('playcontrol_active_settings');
-  if (saved) {
-    try {
-      return JSON.parse(saved);
-    } catch (e) {}
-  }
-  return DEFAULT_SETTINGS;
-};
-
 interface PendingSettingsUpdate extends SalleSettings {
   status: 'pending' | 'approved' | 'rejected';
   requestedAt: string;
 }
 
-const getPendingUpdate = (): PendingSettingsUpdate | null => {
-  const saved = localStorage.getItem('playcontrol_pending_settings_update');
-  if (saved) {
-    try {
-      return JSON.parse(saved);
-    } catch (e) {}
-  }
-  return null;
-};
-
 export const AdminSettings: React.FC = () => {
-  const activeSettings = getActiveSettings();
-  const [salleName, setSalleName] = useState(activeSettings.salleName);
-  const [salleAddress, setSalleAddress] = useState(activeSettings.salleAddress);
-  const [phoneCountryCode, setPhoneCountryCode] = useState(activeSettings.phoneCountryCode);
-  const [rawPhoneNum, setRawPhoneNum] = useState(activeSettings.rawPhoneNum);
+  const [loading, setLoading] = useState(true);
+  const [settingsId, setSettingsId] = useState<string | null>(null);
+  const [salleName, setSalleName] = useState('');
+  const [salleAddress, setSalleAddress] = useState('');
+  const [phoneCountryCode, setPhoneCountryCode] = useState('+237');
+  const [rawPhoneNum, setRawPhoneNum] = useState('');
 
-  const [pendingUpdate, setPendingUpdate] = useState<PendingSettingsUpdate | null>(getPendingUpdate());
+  const [pendingUpdate, setPendingUpdate] = useState<PendingSettingsUpdate | null>(null);
+
+  const fetchSettings = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('settings')
+        .select('*')
+        .eq('is_active', true)
+        .limit(1)
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
+        setSettingsId(data.id);
+        setSalleName(data.salle_name);
+        setSalleAddress(data.salle_address);
+        setPhoneCountryCode(data.phone_country_code);
+        setRawPhoneNum(data.raw_phone_num);
+        if (data.pending_update) {
+          setPendingUpdate(data.pending_update as PendingSettingsUpdate);
+        } else {
+          setPendingUpdate(null);
+        }
+      }
+    } catch (err: any) {
+      showToastMsg(err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSettings();
+  }, []);
+
+  const handleClearPendingAlert = async () => {
+    if (!settingsId) return;
+    const { error } = await supabase
+      .from('settings')
+      .update({
+        pending_update: null
+      })
+      .eq('id', settingsId);
+
+    if (error) {
+      showToastMsg(error.message, 'error');
+      return;
+    }
+
+    setPendingUpdate(null);
+  };
 
   // Country selection for validation
   const countries = [
@@ -106,7 +133,7 @@ export const AdminSettings: React.FC = () => {
     openConfirm(
       "Soumettre les modifications",
       "Les modifications apportées au profil de la salle doivent être validées par le Super Administrateur. Soumettre la demande ?",
-      () => {
+      async () => {
         const updateRequest: PendingSettingsUpdate = {
           status: 'pending',
           salleName,
@@ -115,13 +142,33 @@ export const AdminSettings: React.FC = () => {
           rawPhoneNum,
           requestedAt: new Date().toISOString()
         };
-        localStorage.setItem('playcontrol_pending_settings_update', JSON.stringify(updateRequest));
+
+        const { error } = await supabase
+          .from('settings')
+          .update({
+            pending_update: updateRequest
+          })
+          .eq('id', settingsId);
+
+        if (error) {
+          showToastMsg(error.message, 'error');
+          return;
+        }
+
         setPendingUpdate(updateRequest);
         showToastMsg("Demande de modification soumise au Super Administrateur.");
       },
       'info'
     );
   };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '400px' }}>
+        <p style={{ color: 'var(--neutral-500)', fontWeight: 600 }}>Chargement des paramètres depuis Supabase...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', maxWidth: '650px', margin: '0 auto', width: '100%' }}>
@@ -182,10 +229,7 @@ export const AdminSettings: React.FC = () => {
           <button 
             type="button" 
             className="btn btn-secondary btn-sm" 
-            onClick={() => {
-              localStorage.removeItem('playcontrol_pending_settings_update');
-              setPendingUpdate(null);
-            }}
+            onClick={handleClearPendingAlert}
             style={{ padding: '4px 10px', fontSize: 'var(--font-xs)', color: '#dc2626', borderColor: '#fee2e2' }}
           >
             Masquer
@@ -216,10 +260,7 @@ export const AdminSettings: React.FC = () => {
           <button 
             type="button" 
             className="btn btn-secondary btn-sm" 
-            onClick={() => {
-              localStorage.removeItem('playcontrol_pending_settings_update');
-              setPendingUpdate(null);
-            }}
+            onClick={handleClearPendingAlert}
             style={{ padding: '4px 10px', fontSize: 'var(--font-xs)', color: '#16a34a', borderColor: '#dcfce7' }}
           >
             Fermer

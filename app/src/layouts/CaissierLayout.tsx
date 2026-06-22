@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
@@ -6,6 +6,7 @@ import {
   MonitorPlay, Users, Wallet, LogOut, Bell, Wifi, WifiOff, ShieldAlert
 } from 'lucide-react';
 import logoImg from '../assets/logo.jpeg';
+import { supabase } from '../lib/supabaseClient';
 
 interface GameStation {
   id: string;
@@ -55,18 +56,64 @@ export const CaissierLayout: React.FC = () => {
     message: ''
   });
 
-  const [isShiftActive, setIsShiftActive] = useState<boolean>(() => {
-    return localStorage.getItem('playcontrol_shift_active') === 'true';
-  });
+  const [isShiftActive, setIsShiftActive] = useState<boolean>(false);
   const [initialCashInput, setInitialCashInput] = useState<string>('50000');
+  const [loadingShift, setLoadingShift] = useState<boolean>(true);
 
-  const handleOpenShift = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (!user) return;
+    const checkOpenShift = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('shifts')
+          .select('id, initial_cash')
+          .eq('cashier_id', user.id)
+          .eq('status', 'open')
+          .maybeSingle();
+
+        if (data) {
+          setIsShiftActive(true);
+          localStorage.setItem('playcontrol_shift_active', 'true');
+          localStorage.setItem('playcontrol_shift_initial_cash', String(data.initial_cash));
+        } else {
+          setIsShiftActive(false);
+          localStorage.setItem('playcontrol_shift_active', 'false');
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoadingShift(false);
+      }
+    };
+    checkOpenShift();
+  }, [user?.id]);
+
+  const handleOpenShift = async (e: React.FormEvent) => {
     e.preventDefault();
     const val = Number(initialCashInput);
     if (isNaN(val) || val < 0) return;
-    localStorage.setItem('playcontrol_shift_active', 'true');
-    localStorage.setItem('playcontrol_shift_initial_cash', String(val));
-    setIsShiftActive(true);
+
+    try {
+      const { data, error } = await supabase
+        .from('shifts')
+        .insert({
+          cashier_id: user.id,
+          initial_cash: val,
+          status: 'open'
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
+        setIsShiftActive(true);
+        localStorage.setItem('playcontrol_shift_active', 'true');
+        localStorage.setItem('playcontrol_shift_initial_cash', String(val));
+      }
+    } catch (err: any) {
+      alert("Erreur lors de l'ouverture du shift : " + err.message);
+    }
   };
 
   // Route protection
@@ -87,29 +134,44 @@ export const CaissierLayout: React.FC = () => {
     );
   }
 
-  const handleLogout = () => {
-    const activeShift = localStorage.getItem('playcontrol_shift_active') === 'true';
-    const currentPostes = getPostesFromStorage();
-    const hasActiveConsole = currentPostes.some(p => p.status === 'occupe');
+  const handleLogout = async () => {
+    try {
+      const { data: openShift } = await supabase
+        .from('shifts')
+        .select('id')
+        .eq('cashier_id', user.id)
+        .eq('status', 'open')
+        .maybeSingle();
 
-    if (activeShift || hasActiveConsole) {
-      const reasons: string[] = [];
-      if (activeShift) {
-        reasons.push("votre caisse/shift est actif");
+      const { data: activePostes } = await supabase
+        .from('postes')
+        .select('id')
+        .eq('status', 'occupe');
+
+      const activeShift = !!openShift;
+      const hasActiveConsole = activePostes && activePostes.length > 0;
+
+      if (activeShift || hasActiveConsole) {
+        const reasons: string[] = [];
+        if (activeShift) {
+          reasons.push("votre caisse/shift est actif");
+        }
+        if (hasActiveConsole) {
+          reasons.push("au moins une console tourne");
+        }
+        setRestrictionModal({
+          isOpen: true,
+          title: "Déconnexion impossible",
+          message: `Vous ne pouvez pas vous déconnecter car ${reasons.join(' et ')}. Veuillez clôturer les sessions de jeu et fermer la caisse avant de vous déconnecter.`
+        });
+        return;
       }
-      if (hasActiveConsole) {
-        reasons.push("au moins une console tourne");
-      }
-      setRestrictionModal({
-        isOpen: true,
-        title: "Déconnexion impossible",
-        message: `Vous ne pouvez pas vous déconnecter car ${reasons.join(' et ')}. Veuillez clôturer les sessions de jeu et fermer la caisse avant de vous déconnecter.`
-      });
-      return;
+
+      logout();
+      navigate('/login');
+    } catch (err: any) {
+      console.error(err);
     }
-
-    logout();
-    navigate('/login');
   };
 
   const navLinks = [
@@ -295,7 +357,11 @@ export const CaissierLayout: React.FC = () => {
 
       {/* Main Content Pane */}
       <main style={{ flex: 1, padding: 'var(--space-6) var(--space-6) var(--space-12)', display: 'flex', flexDirection: 'column' }}>
-        {isShiftActive ? (
+        {loadingShift ? (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <p style={{ color: 'var(--neutral-500)', fontWeight: 600 }}>Chargement de l'état de caisse...</p>
+          </div>
+        ) : isShiftActive ? (
           <Outlet />
         ) : (
           <div style={{

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Save, Receipt, Award, Edit2, Plus, Trash2 } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
 
 interface HourlyRate {
   id: string;
@@ -19,54 +20,19 @@ interface AbonnementPackage {
   description: string;
 }
 
-const DEFAULT_MATERIAL_TYPES: HourlyRate[] = [
-  { id: '1', type: 'ps5_vip', label: 'Console PS5 (Zone VIP)', price: 1500, durationMinutes: 60 },
-  { id: '2', type: 'ps5_standard', label: 'Console PS5 (Zone Standard)', price: 1000, durationMinutes: 60 },
-  { id: '3', type: 'ps4_standard', label: 'Console PS4 (Zone Standard)', price: 800, durationMinutes: 60 },
-];
-
-const getMaterialTypes = (): HourlyRate[] => {
-  const saved = localStorage.getItem('playcontrol_material_types');
-  if (saved) {
-    try {
-      return JSON.parse(saved);
-    } catch (e) {
-      // ignore
-    }
-  }
-  return DEFAULT_MATERIAL_TYPES;
-};
-
-const saveMaterialTypes = (types: HourlyRate[]) => {
-  localStorage.setItem('playcontrol_material_types', JSON.stringify(types));
-};
-
-const DEFAULT_PACKAGES: AbonnementPackage[] = [
-  { id: '1', name: 'Pass Journalier', price: 1500, durationHours: 2, validityDays: 1, description: 'Accès libre à tous les postes pendant 2 heures de jeu dans la journée.' },
-  { id: '2', name: 'Pass Hebdomadaire', price: 5000, durationHours: 8, validityDays: 7, description: '8 heures de crédit de jeu valables pendant 7 jours sur toutes les consoles.' },
-  { id: '3', name: 'Pass Mensuel', price: 15000, durationHours: 25, validityDays: 30, description: '25 heures de crédit de jeu valables pendant 30 jours.' },
-  { id: '4', name: 'Pass VIP Gold', price: 25000, durationHours: 50, validityDays: 30, description: '50 heures de crédit de jeu sur toutes les consoles, zone VIP incluse.' },
-];
-
-const getAbonnementPackages = (): AbonnementPackage[] => {
-  const saved = localStorage.getItem('playcontrol_abonnement_packages');
-  if (saved) {
-    try {
-      return JSON.parse(saved);
-    } catch (e) {
-      // ignore
-    }
-  }
-  return DEFAULT_PACKAGES;
-};
-
-const saveAbonnementPackages = (pkgs: AbonnementPackage[]) => {
-  localStorage.setItem('playcontrol_abonnement_packages', JSON.stringify(pkgs));
+const mapNameToType = (name: string): 'Journalier' | 'Hebdomadaire' | 'Mensuel' | 'VIP' => {
+  const lower = name.toLowerCase();
+  if (lower.includes('journalier') || lower.includes('jour')) return 'Journalier';
+  if (lower.includes('hebdomadaire') || lower.includes('hebdo') || lower.includes('semaine')) return 'Hebdomadaire';
+  if (lower.includes('mensuel') || lower.includes('mois')) return 'Mensuel';
+  if (lower.includes('vip')) return 'VIP';
+  return 'Journalier';
 };
 
 export const AdminTarifs: React.FC = () => {
-  const [rates, setRates] = useState<HourlyRate[]>(getMaterialTypes());
-  const [packages, setPackages] = useState<AbonnementPackage[]>(getAbonnementPackages());
+  const [loading, setLoading] = useState(true);
+  const [rates, setRates] = useState<HourlyRate[]>([]);
+  const [packages, setPackages] = useState<AbonnementPackage[]>([]);
 
   const [showEditPackageModal, setShowEditPackageModal] = useState<AbonnementPackage | null>(null);
 
@@ -114,6 +80,54 @@ export const AdminTarifs: React.FC = () => {
     setConfirmModal({ isOpen: true, title, message, onConfirm, type });
   };
 
+  const fetchTarifsData = async () => {
+    try {
+      setLoading(true);
+      // Chargement des tarifs horaires
+      const { data: mtData, error: mtError } = await supabase
+        .from('material_types')
+        .select('*')
+        .order('created_at', { ascending: true });
+      if (mtError) throw mtError;
+
+      // Chargement des forfaits d'abonnement
+      const { data: apData, error: apError } = await supabase
+        .from('abonnement_packages')
+        .select('*')
+        .order('created_at', { ascending: true });
+      if (apError) throw apError;
+
+      setRates(
+        (mtData || []).map(r => ({
+          id: r.id,
+          type: r.type,
+          label: r.label,
+          price: r.price,
+          durationMinutes: r.duration_minutes,
+        }))
+      );
+
+      setPackages(
+        (apData || []).map(p => ({
+          id: p.id,
+          name: `Pass ${p.type}`,
+          price: p.price,
+          durationHours: p.duration_hours,
+          validityDays: p.type === 'Journalier' ? 1 : p.type === 'Hebdomadaire' ? 7 : 30,
+          description: `Pass de type ${p.type} offrant ${p.duration_hours} heures de jeu.`,
+        }))
+      );
+    } catch (err: any) {
+      showToastMsg(err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTarifsData();
+  }, []);
+
   const handleRatePriceChange = (id: string, newPrice: number) => {
     setRates(rates.map(r => r.id === id ? { ...r, price: newPrice } : r));
   };
@@ -127,19 +141,31 @@ export const AdminTarifs: React.FC = () => {
     openConfirm(
       "Enregistrer les tarifs horaires",
       "Êtes-vous sûr de vouloir appliquer ces nouveaux tarifs horaires de jeu ? Ils seront effectifs immédiatement pour toutes les nouvelles sessions.",
-      () => {
-        saveMaterialTypes(rates);
-        showToastMsg("Les tarifs horaires ont été enregistrés avec succès.");
+      async () => {
+        try {
+          for (const rate of rates) {
+            const { error } = await supabase
+              .from('material_types')
+              .update({
+                price: rate.price,
+                duration_minutes: rate.durationMinutes
+              })
+              .eq('id', rate.id);
+            if (error) throw error;
+          }
+          showToastMsg("Les tarifs horaires ont été enregistrés avec succès.");
+        } catch (err: any) {
+          showToastMsg(err.message, 'error');
+        }
       },
       'info'
     );
   };
 
-  const handleAddMaterialType = (e: React.FormEvent) => {
+  const handleAddMaterialType = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTypeLabel.trim()) return;
 
-    // Check uniqueness
     const key = newTypeLabel.trim().toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_');
     if (rates.some(r => r.type === key || r.label.toLowerCase() === newTypeLabel.trim().toLowerCase())) {
       showToastMsg(`Le type de matériel "${newTypeLabel}" existe déjà.`, 'error');
@@ -147,18 +173,23 @@ export const AdminTarifs: React.FC = () => {
     }
 
     const totalMinutes = newTypeHours * 60 + newTypeMinutes;
-    const newRate: HourlyRate = {
-      id: String(Date.now()),
+    const newRate = {
       type: key,
       label: newTypeLabel.trim(),
       price: newTypePrice,
-      durationMinutes: totalMinutes > 0 ? totalMinutes : 1
+      duration_minutes: totalMinutes > 0 ? totalMinutes : 1
     };
 
-    const updated = [...rates, newRate];
-    setRates(updated);
-    saveMaterialTypes(updated);
+    const { error } = await supabase
+      .from('material_types')
+      .insert(newRate);
 
+    if (error) {
+      showToastMsg(error.message, 'error');
+      return;
+    }
+
+    fetchTarifsData();
     setShowAddTypeModal(false);
     setNewTypeLabel('');
     setNewTypePrice(1000);
@@ -171,10 +202,18 @@ export const AdminTarifs: React.FC = () => {
     openConfirm(
       "Supprimer le type de matériel",
       `Êtes-vous sûr de vouloir supprimer définitivement le type de matériel "${label}" ? Cela supprimera également son tarif associé.`,
-      () => {
-        const updated = rates.filter(r => r.id !== id);
-        setRates(updated);
-        saveMaterialTypes(updated);
+      async () => {
+        const { error } = await supabase
+          .from('material_types')
+          .delete()
+          .eq('id', id);
+
+        if (error) {
+          showToastMsg(error.message, 'error');
+          return;
+        }
+
+        fetchTarifsData();
         setIsDeleteMode(false);
         showToastMsg(`Le type de matériel "${label}" a été supprimé.`);
       },
@@ -182,40 +221,52 @@ export const AdminTarifs: React.FC = () => {
     );
   };
 
-  const handleAddPackage = (e: React.FormEvent) => {
+  const handleAddPackage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPkgName.trim()) return;
 
-    const newPkg: AbonnementPackage = {
-      id: String(Date.now()),
-      name: newPkgName.trim(),
+    const typeEnum = mapNameToType(newPkgName);
+    const newPkg = {
+      type: typeEnum,
       price: newPkgPrice,
-      durationHours: newPkgDuration,
-      validityDays: newPkgValidity,
-      description: newPkgDescription.trim() || `${newPkgDuration} heures de crédit de jeu valables pendant ${newPkgValidity} jours.`
+      duration_hours: newPkgDuration
     };
 
-    const updated = [...packages, newPkg];
-    setPackages(updated);
-    saveAbonnementPackages(updated);
+    const { error } = await supabase
+      .from('abonnement_packages')
+      .upsert(newPkg, { onConflict: 'type' });
 
+    if (error) {
+      showToastMsg(error.message, 'error');
+      return;
+    }
+
+    fetchTarifsData();
     setShowAddPackageModal(false);
     setNewPkgName('');
     setNewPkgPrice(5000);
     setNewPkgDuration(10);
     setNewPkgValidity(7);
     setNewPkgDescription('');
-    showToastMsg(`Le forfait "${newPkg.name}" a été créé avec succès.`);
+    showToastMsg(`Le forfait "${newPkgName}" a été configuré avec succès.`);
   };
 
   const handleDeletePackage = (id: string, name: string) => {
     openConfirm(
       "Supprimer le forfait d'abonnement",
       `Êtes-vous sûr de vouloir supprimer définitivement le forfait "${name}" ?`,
-      () => {
-        const updated = packages.filter(p => p.id !== id);
-        setPackages(updated);
-        saveAbonnementPackages(updated);
+      async () => {
+        const { error } = await supabase
+          .from('abonnement_packages')
+          .delete()
+          .eq('id', id);
+
+        if (error) {
+          showToastMsg(error.message, 'error');
+          return;
+        }
+
+        fetchTarifsData();
         setIsPackageDeleteMode(false);
         showToastMsg(`Le forfait "${name}" a été supprimé.`);
       },
@@ -230,27 +281,35 @@ export const AdminTarifs: React.FC = () => {
     setEditValidity(pkg.validityDays);
   };
 
-  const handleSavePackage = (e: React.FormEvent) => {
+  const handleSavePackage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showEditPackageModal) return;
 
-    const updated = packages.map(p => {
-      if (p.id === showEditPackageModal.id) {
-        return {
-          ...p,
-          price: editPrice,
-          durationHours: editDuration,
-          validityDays: editValidity
-        };
-      }
-      return p;
-    });
+    const { error } = await supabase
+      .from('abonnement_packages')
+      .update({
+        price: editPrice,
+        duration_hours: editDuration
+      })
+      .eq('id', showEditPackageModal.id);
 
-    setPackages(updated);
-    saveAbonnementPackages(updated);
+    if (error) {
+      showToastMsg(error.message, 'error');
+      return;
+    }
+
+    fetchTarifsData();
     setShowEditPackageModal(null);
     showToastMsg(`Le forfait "${showEditPackageModal.name}" a été configuré avec succès.`);
   };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '400px' }}>
+        <p style={{ color: 'var(--neutral-500)', fontWeight: 600 }}>Chargement des tarifs depuis Supabase...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>

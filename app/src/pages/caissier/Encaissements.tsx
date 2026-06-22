@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { Landmark, Wallet, Check, AlertTriangle, FileDown, ShieldAlert } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
 
 interface GameStation {
   id: string;
@@ -180,17 +181,10 @@ export const CaissierEncaissements: React.FC = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  const [initialCash] = useState<number>(() => {
-    const saved = localStorage.getItem('playcontrol_shift_initial_cash');
-    return saved ? Number(saved) : 50000;
-  });
-  const [transactions] = useState<Transaction[]>([
-    { id: '1', time: '14:30', clientName: 'Invité_PS5_1', type: 'session', amount: 1200, paymentMethod: 'Espèces' },
-    { id: '2', time: '13:15', clientName: 'Marc_K', type: 'recharge', amount: 5000, paymentMethod: 'Mobile Money' },
-    { id: '3', time: '12:00', clientName: 'Arthur Mbe', type: 'abonnement', amount: 25000, paymentMethod: 'Espèces' },
-    { id: '4', time: '10:45', clientName: 'Invité_PC_3', type: 'session', amount: 800, paymentMethod: 'Espèces' },
-    { id: '5', time: '09:15', clientName: 'Serge_F', type: 'recharge', amount: 2000, paymentMethod: 'Espèces' },
-  ]);
+  const [activeShift, setActiveShift] = useState<any | null>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [initialCash, setInitialCash] = useState<number>(50000);
+  const [loading, setLoading] = useState<boolean>(true);
 
   const [showCloseShiftModal, setShowCloseShiftModal] = useState(false);
   const [actualCashInput, setActualCashInput] = useState<string>('');
@@ -213,6 +207,51 @@ export const CaissierEncaissements: React.FC = () => {
     }, 3000);
   };
 
+  const fetchActiveShiftAndTransactions = async () => {
+    if (!user) return;
+    try {
+      setLoading(true);
+      const { data: shiftData, error: shiftError } = await supabase
+        .from('shifts')
+        .select('*')
+        .eq('cashier_id', user.id)
+        .eq('status', 'open')
+        .maybeSingle();
+
+      if (shiftError) throw shiftError;
+
+      if (shiftData) {
+        setActiveShift(shiftData);
+        setInitialCash(shiftData.initial_cash);
+
+        const { data: transData, error: transError } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('shift_id', shiftData.id)
+          .order('created_at', { ascending: false });
+
+        if (transError) throw transError;
+
+        setTransactions((transData || []).map((t: any) => ({
+          id: t.id,
+          time: new Date(t.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+          clientName: t.client_name,
+          type: t.transaction_type,
+          amount: t.amount,
+          paymentMethod: t.payment_method === 'espèces' ? 'Espèces' : 'Mobile Money'
+        })));
+      }
+    } catch (e: any) {
+      showToastMsg(e.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchActiveShiftAndTransactions();
+  }, [user?.id]);
+
   // Calculate shift sums
   const cashSales = transactions
     .filter(t => t.paymentMethod === 'Espèces')
@@ -229,44 +268,69 @@ export const CaissierEncaissements: React.FC = () => {
   const countedCash = actualCashInput ? Number(actualCashInput) : expectedCashInDrawer;
   const cashDifference = countedCash - expectedCashInDrawer;
 
-  const handleCloseShiftConfirm = (e: React.FormEvent) => {
+  const handleCloseShiftConfirm = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Check if there are active consoles
-    const currentPostes = getPostesFromStorage();
-    const hasActiveConsole = currentPostes.some(p => p.status === 'occupe');
-    if (hasActiveConsole) {
-      setRestrictionModal({
-        isOpen: true,
-        title: "Clôture impossible",
-        message: "Impossible de clôturer le shift car il y a encore des consoles en cours d'utilisation. Veuillez forcer la fin des sessions ou attendre qu'elles se terminent."
+    if (!activeShift) return;
+
+    try {
+      // Check if there are active consoles in database
+      const { data: activePostes, error: ptError } = await supabase
+        .from('postes')
+        .select('id')
+        .eq('status', 'occupe');
+
+      if (ptError) throw ptError;
+
+      const hasActiveConsole = activePostes && activePostes.length > 0;
+      if (hasActiveConsole) {
+        setRestrictionModal({
+          isOpen: true,
+          title: "Clôture impossible",
+          message: "Impossible de clôturer le shift car il y a encore des consoles en cours d'utilisation. Veuillez forcer la fin des sessions ou attendre qu'elles se terminent."
+        });
+        return;
+      }
+
+      // Update shift status to closed in Supabase
+      const { error: closeError } = await supabase
+        .from('shifts')
+        .update({
+          closed_at: new Date().toISOString(),
+          closed_cash: countedCash,
+          expected_cash: expectedCashInDrawer,
+          cash_difference: cashDifference,
+          status: 'closed'
+        })
+        .eq('id', activeShift.id);
+
+      if (closeError) throw closeError;
+
+      // Reset shift status in localStorage
+      localStorage.setItem('playcontrol_shift_active', 'false');
+      localStorage.removeItem('playcontrol_shift_initial_cash');
+
+      // Print closure receipt
+      printShiftReceipt({
+        cashierName: user?.name || 'Sophie Caisse',
+        initialCash,
+        cashSales,
+        mobMoneySales,
+        totalShiftSales,
+        expectedCashInDrawer,
+        countedCash,
+        cashDifference
       });
-      return;
+
+      showToastMsg("Shift clôturé avec succès. Impression du reçu de caisse...");
+      
+      setTimeout(() => {
+        setShowCloseShiftModal(false);
+        logout();
+        navigate('/login');
+      }, 2000);
+    } catch (err: any) {
+      showToastMsg("Erreur lors de la clôture : " + err.message, 'error');
     }
-
-    // Reset shift status in localStorage
-    localStorage.setItem('playcontrol_shift_active', 'false');
-    localStorage.removeItem('playcontrol_shift_initial_cash');
-
-    // Print closure receipt
-    printShiftReceipt({
-      cashierName: user?.name || 'Sophie Caisse',
-      initialCash,
-      cashSales,
-      mobMoneySales,
-      totalShiftSales,
-      expectedCashInDrawer,
-      countedCash,
-      cashDifference
-    });
-
-    showToastMsg("Shift clôturé avec succès. Impression du reçu de caisse...");
-    
-    setTimeout(() => {
-      setShowCloseShiftModal(false);
-      logout();
-      navigate('/login');
-    }, 2000);
   };
 
   return (

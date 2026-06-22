@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Search, Trash2, ShieldAlert, CreditCard, Award, UserMinus, UserCheck, Edit2 } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
 
 interface MemberClient {
   id: string;
@@ -15,27 +16,51 @@ interface MemberClient {
 }
 
 export const AdminClients: React.FC = () => {
-  const [clients, setClients] = useState<MemberClient[]>(() => {
-    const saved = localStorage.getItem('playcontrol_clients');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        // ignore
-      }
-    }
-    return [
-      { id: '1', username: 'Gamer_Pro', fullName: 'Arthur Mbe', phone: '+237 699 99 99 99', balance: 5400, abonnementType: 'VIP', abonnementExpiration: '2026-07-15', status: 'active', abonnementRemainingTime: 240 },
-      { id: '2', username: 'Marc_K', fullName: 'Marc Kemajou', phone: '+237 677 77 77 77', balance: 12500, abonnementType: 'Aucun', abonnementExpiration: null, status: 'active', abonnementRemainingTime: 0 },
-      { id: '3', username: 'Alain_T', fullName: 'Alain Tchakounté', phone: '+237 655 55 55 55', balance: 750, abonnementType: 'Aucun', abonnementExpiration: null, status: 'active', abonnementRemainingTime: 0 },
-      { id: '4', username: 'Serge_F', fullName: 'Serge Fotso', phone: '+237 688 88 88 88', balance: 3200, abonnementType: 'Hebdomadaire', abonnementExpiration: '2026-06-22', status: 'active', abonnementRemainingTime: 90 },
-      { id: '5', username: 'Amadou_B', fullName: 'Amadou Bello', phone: '+234 80 31 23 45 67', balance: 0, abonnementType: 'Aucun', abonnementExpiration: null, status: 'suspended', abonnementRemainingTime: 0 },
-    ];
-  });
+  const [loading, setLoading] = useState(true);
+  const [clients, setClients] = useState<MemberClient[]>([]);
+  const [dbPackages, setDbPackages] = useState<any[]>([]);
 
-  React.useEffect(() => {
-    localStorage.setItem('playcontrol_clients', JSON.stringify(clients));
-  }, [clients]);
+  const fetchClients = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('clients')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setClients(
+        (data || []).map(c => ({
+          id: c.id,
+          username: c.username,
+          fullName: c.full_name,
+          phone: c.phone || '',
+          balance: c.balance,
+          abonnementType: c.abonnement_type as any,
+          abonnementExpiration: c.abonnement_expiration ? c.abonnement_expiration.split('T')[0] : null,
+          status: c.status as any,
+          abonnementRemainingTime: c.abonnement_remaining_time || 0
+        }))
+      );
+    } catch (e: any) {
+      showToastMsg(e.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchPackages = async () => {
+    try {
+      const { data, error } = await supabase.from('abonnement_packages').select('*');
+      if (!error && data) {
+        setDbPackages(data);
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    fetchClients();
+    fetchPackages();
+  }, []);
 
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -140,12 +165,20 @@ export const AdminClients: React.FC = () => {
     setEditRawPhoneNum(rawNum);
   };
 
-  const handleSaveEditClient = (e: React.FormEvent) => {
+  const handleSaveEditClient = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showEditModal) return;
     if (!editFullName || !editUsername) return;
 
-    if (clients.some(c => c.id !== showEditModal.id && c.username.toLowerCase() === editUsername.toLowerCase())) {
+    // Check unique username excluding current client
+    const { data: existing } = await supabase
+      .from('clients')
+      .select('id')
+      .eq('username', editUsername.replace(/\s/g, '').toLowerCase())
+      .neq('id', showEditModal.id)
+      .maybeSingle();
+
+    if (existing) {
       showToastMsg(`L'identifiant @${editUsername} est déjà utilisé par un autre client.`, 'error');
       return;
     }
@@ -167,23 +200,26 @@ export const AdminClients: React.FC = () => {
 
     const fullPhone = `${editPhoneCountryCode} ${formattedPhoneNum}`;
 
-    setClients(clients.map(c => {
-      if (c.id === showEditModal.id) {
-        return {
-          ...c,
-          fullName: editFullName,
-          username: editUsername,
-          phone: fullPhone
-        };
-      }
-      return c;
-    }));
+    const { error } = await supabase
+      .from('clients')
+      .update({
+        full_name: editFullName,
+        username: editUsername.replace(/\s/g, '').toLowerCase(),
+        phone: fullPhone
+      })
+      .eq('id', showEditModal.id);
 
+    if (error) {
+      showToastMsg(error.message, 'error');
+      return;
+    }
+
+    fetchClients();
     setShowEditModal(null);
     showToastMsg(`Les informations du client @${editUsername} ont été mises à jour.`);
   };
 
-  const handleCreateClient = (e: React.FormEvent) => {
+  const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName || !newUsername) return;
 
@@ -192,26 +228,40 @@ export const AdminClients: React.FC = () => {
       return;
     }
 
-    // Username unique validation
-    if (clients.some(c => c.username.toLowerCase() === newUsername.toLowerCase())) {
+    // Username unique validation in DB
+    const { data: existing } = await supabase
+      .from('clients')
+      .select('id')
+      .eq('username', newUsername.replace(/\s/g, '').toLowerCase())
+      .maybeSingle();
+
+    if (existing) {
       showToastMsg(`L'identifiant "@${newUsername}" est déjà utilisé.`, 'error');
       return;
     }
 
     const finalPhone = `${phoneCountryCode} ${rawPhoneNum.trim()}`;
 
-    const newClient: MemberClient = {
-      id: String(clients.length + 1),
-      username: newUsername.replace(/\s/g, ''),
-      fullName: newName,
+    const newClient = {
+      username: newUsername.replace(/\s/g, '').toLowerCase(),
+      full_name: newName,
       phone: finalPhone,
       balance: 0,
-      abonnementType: 'Aucun',
-      abonnementExpiration: null,
+      abonnement_type: 'Aucun',
+      abonnement_expiration: null,
       status: 'active'
     };
 
-    setClients([...clients, newClient]);
+    const { error } = await supabase
+      .from('clients')
+      .insert(newClient);
+
+    if (error) {
+      showToastMsg(error.message, 'error');
+      return;
+    }
+
+    fetchClients();
     setShowAddModal(false);
     setNewName('');
     setNewUsername('');
@@ -219,7 +269,7 @@ export const AdminClients: React.FC = () => {
     showToastMsg(`Le compte membre de "${newName}" (@${newUsername}) a été créé.`);
   };
 
-  const handleRecharge = (e: React.FormEvent) => {
+  const handleRecharge = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showRechargeModal) return;
 
@@ -229,68 +279,65 @@ export const AdminClients: React.FC = () => {
       return;
     }
 
-    setClients(clients.map(c => {
-      if (c.id === showRechargeModal.id) {
-        return { ...c, balance: c.balance + amount };
-      }
-      return c;
-    }));
+    const { error } = await supabase
+      .from('clients')
+      .update({
+        balance: showRechargeModal.balance + amount
+      })
+      .eq('id', showRechargeModal.id);
 
+    if (error) {
+      showToastMsg(error.message, 'error');
+      return;
+    }
+
+    fetchClients();
     setShowRechargeModal(null);
     setCustomRecharge('');
     showToastMsg(`Le compte de @${showRechargeModal.username} a été crédité de ${amount.toLocaleString()} FCFA.`);
   };
 
-  const handleAbonnementAssign = (e: React.FormEvent) => {
+  const handleAbonnementAssign = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showAbonnementModal) return;
 
-    const prices = {
-      Journalier: 1500,
-      Hebdomadaire: 5000,
-      Mensuel: 15000,
-      VIP: 25000
-    };
-
-    const cost = prices[selectedAbonnement];
+    const targetPkg = dbPackages.find(p => p.type === selectedAbonnement);
+    const cost = targetPkg ? targetPkg.price : (selectedAbonnement === 'Journalier' ? 1500 : selectedAbonnement === 'Hebdomadaire' ? 5000 : selectedAbonnement === 'Mensuel' ? 15000 : 25000);
+    const hours = targetPkg ? targetPkg.duration_hours : (selectedAbonnement === 'Journalier' ? 2 : selectedAbonnement === 'Hebdomadaire' ? 8 : selectedAbonnement === 'Mensuel' ? 25 : 50);
+    const mins = hours * 60;
 
     if (showAbonnementModal.balance < cost) {
       showToastMsg(`Solde insuffisant. Forfait : ${cost} FCFA. Solde actuel : ${showAbonnementModal.balance} FCFA. Veuillez recharger d'abord.`, 'error');
       return;
     }
 
-    // Expiration date calculator
     const today = new Date();
-    let mins = 0;
     if (selectedAbonnement === 'Journalier') {
       today.setDate(today.getDate() + 1);
-      mins = 120;
     } else if (selectedAbonnement === 'Hebdomadaire') {
       today.setDate(today.getDate() + 7);
-      mins = 480;
-    } else if (selectedAbonnement === 'Mensuel') {
+    } else if (selectedAbonnement === 'Mensuel' || selectedAbonnement === 'VIP') {
       today.setMonth(today.getMonth() + 1);
-      mins = 1500;
-    } else if (selectedAbonnement === 'VIP') {
-      today.setMonth(today.getMonth() + 1);
-      mins = 3000;
     }
 
-    const expStr = today.toISOString().split('T')[0];
+    const expStr = today.toISOString();
 
-    setClients(clients.map(c => {
-      if (c.id === showAbonnementModal.id) {
-        return {
-          ...c,
-          balance: c.balance - cost,
-          abonnementType: selectedAbonnement,
-          abonnementExpiration: expStr,
-          abonnementRemainingTime: mins
-        };
-      }
-      return c;
-    }));
+    const { error } = await supabase
+      .from('clients')
+      .update({
+        balance: showAbonnementModal.balance - cost,
+        abonnement_type: selectedAbonnement,
+        abonnement_expiration: expStr,
+        abonnement_remaining_time: mins
+      })
+      .eq('id', showAbonnementModal.id);
 
+    if (error) {
+      showToastMsg(error.message, 'error');
+      return;
+    }
+
+    fetchClients();
     setShowAbonnementModal(null);
     showToastMsg(`Le pass "${selectedAbonnement}" a été attribué avec succès à @${showAbonnementModal.username}.`);
   };
@@ -302,13 +349,20 @@ export const AdminClients: React.FC = () => {
       isSuspended 
         ? `Êtes-vous sûr de vouloir suspendre le compte de @${username} ? Il ne pourra plus s'authentifier sur les postes de jeux.`
         : `Voulez-vous réactiver le compte de @${username} ?`,
-      () => {
-        setClients(clients.map(c => {
-          if (c.id === id) {
-            return { ...c, status: isSuspended ? 'suspended' : 'active' };
-          }
-          return c;
-        }));
+      async () => {
+        const { error } = await supabase
+          .from('clients')
+          .update({
+            status: isSuspended ? 'suspended' : 'active'
+          })
+          .eq('id', id);
+
+        if (error) {
+          showToastMsg(error.message, 'error');
+          return;
+        }
+
+        fetchClients();
         showToastMsg(`Le compte de @${username} est désormais ${isSuspended ? 'suspendu' : 'actif'}.`);
       },
       isSuspended ? 'warning' : 'info'
@@ -319,8 +373,18 @@ export const AdminClients: React.FC = () => {
     openConfirm(
       "Supprimer le membre client",
       `Êtes-vous sûr de vouloir supprimer définitivement le membre @${username} ? Son solde restant et son historique de jeu seront perdus de façon irréversible.`,
-      () => {
-        setClients(clients.filter(c => c.id !== id));
+      async () => {
+        const { error } = await supabase
+          .from('clients')
+          .delete()
+          .eq('id', id);
+
+        if (error) {
+          showToastMsg(error.message, 'error');
+          return;
+        }
+
+        fetchClients();
         showToastMsg(`Le compte de @${username} a été supprimé.`);
       },
       'danger'
@@ -332,6 +396,14 @@ export const AdminClients: React.FC = () => {
     c.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
     c.phone.includes(searchTerm)
   );
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '400px' }}>
+        <p style={{ color: 'var(--neutral-500)', fontWeight: 600 }}>Chargement des clients depuis Supabase...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>

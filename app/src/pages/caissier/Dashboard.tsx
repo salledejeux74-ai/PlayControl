@@ -4,6 +4,8 @@ import {
   Gamepad2, Search, Play, Ban, 
   ArrowRightLeft, Clock
 } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
+import { useAuth } from '../../hooks/useAuth';
 
 interface GameStation {
   id: string;
@@ -16,6 +18,7 @@ interface GameStation {
   sessionCode?: string;      // Code unique affiché au caissier, saisi par le joueur
   minutesRemaining?: number;
   totalDuration?: number; // In minutes
+  updatedAt?: string;
 }
 
 interface MaterialType {
@@ -26,23 +29,24 @@ interface MaterialType {
   durationMinutes: number;
 }
 
-const DEFAULT_MATERIAL_TYPES: MaterialType[] = [
-  { id: '1', type: 'ps5_vip', label: 'Console PS5 (Zone VIP)', price: 1500, durationMinutes: 60 },
-  { id: '2', type: 'ps5_standard', label: 'Console PS5 (Zone Standard)', price: 1000, durationMinutes: 60 },
-  { id: '3', type: 'ps4_standard', label: 'Console PS4 (Zone Standard)', price: 800, durationMinutes: 60 },
-];
+interface MemberClient {
+  id: string;
+  username: string;
+  fullName: string;
+  phone: string;
+  balance: number;
+  abonnementType: 'Aucun' | 'Journalier' | 'Hebdomadaire' | 'Mensuel' | 'VIP';
+  abonnementExpiration: string | null;
+  status: 'active' | 'suspended';
+  abonnementRemainingTime?: number; // In minutes
+}
 
-const getMaterialTypes = (): MaterialType[] => {
-  const saved = localStorage.getItem('playcontrol_material_types');
-  if (saved) {
-    try {
-      return JSON.parse(saved);
-    } catch (e) {
-      // ignore
-    }
-  }
-  return DEFAULT_MATERIAL_TYPES;
-};
+interface AbonnementPackage {
+  id: string;
+  type: 'Journalier' | 'Hebdomadaire' | 'Mensuel' | 'VIP';
+  price: number;
+  duration_hours: number;
+}
 
 const formatRemainingTime = (minutes: number): string => {
   if (minutes < 0) return '0 min';
@@ -69,80 +73,33 @@ const generateSessionCode = (): string => {
   return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 };
 
-
-
-interface MemberClient {
-  id: string;
-  username: string;
-  fullName: string;
-  phone: string;
-  balance: number;
-  abonnementType: 'Aucun' | 'Journalier' | 'Hebdomadaire' | 'Mensuel' | 'VIP';
-  abonnementExpiration: string | null;
-  status: 'active' | 'suspended';
-  abonnementRemainingTime?: number; // In minutes
-}
-
-const DEFAULT_CLIENTS: MemberClient[] = [
-  { id: '1', username: 'Gamer_Pro', fullName: 'Arthur Mbe', phone: '+237 699 99 99 99', balance: 5400, abonnementType: 'VIP', abonnementExpiration: '2026-07-15', status: 'active', abonnementRemainingTime: 240 },
-  { id: '2', username: 'Marc_K', fullName: 'Marc Kemajou', phone: '+237 677 77 77 77', balance: 12500, abonnementType: 'Aucun', abonnementExpiration: null, status: 'active', abonnementRemainingTime: 0 },
-  { id: '3', username: 'Alain_T', fullName: 'Alain Tchakounté', phone: '+237 655 55 55 55', balance: 750, abonnementType: 'Aucun', abonnementExpiration: null, status: 'active', abonnementRemainingTime: 0 },
-  { id: '4', username: 'Serge_F', fullName: 'Serge Fotso', phone: '+237 688 88 88 88', balance: 3200, abonnementType: 'Hebdomadaire', abonnementExpiration: '2026-06-22', status: 'active', abonnementRemainingTime: 90 },
-  { id: '5', username: 'Amadou_B', fullName: 'Amadou Bello', phone: '+234 80 31 23 45 67', balance: 0, abonnementType: 'Aucun', abonnementExpiration: null, status: 'suspended', abonnementRemainingTime: 0 },
-];
-
-const getClients = (): MemberClient[] => {
-  const saved = localStorage.getItem('playcontrol_clients');
-  if (saved) {
-    try { return JSON.parse(saved); } catch (e) { /* ignore */ }
-  }
-  return DEFAULT_CLIENTS;
-};
+const mapPosteFromDb = (p: any): GameStation => ({
+  id: p.id,
+  name: p.name,
+  type: p.type,
+  characteristics: p.characteristics || '',
+  smartPlugIp: p.smart_plug_ip || '',
+  status: p.status,
+  clientName: p.client_name || undefined,
+  sessionCode: p.session_code || undefined,
+  minutesRemaining: p.minutes_remaining !== null ? p.minutes_remaining : undefined,
+  totalDuration: p.total_duration !== null ? p.total_duration : undefined,
+  updatedAt: p.updated_at
+});
 
 export const CaissierDashboard: React.FC = () => {
-  const [postes, setPostes] = useState<GameStation[]>(() => {
-    const saved = localStorage.getItem('playcontrol_postes');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        // ignore
-      }
-    }
-    return [
-      { id: '1', name: 'PS5 - VIP #1', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Manette DualSense Edge', smartPlugIp: '192.168.1.101', status: 'occupe', clientName: 'Gamer_Pro', minutesRemaining: 45, totalDuration: 120 },
-      { id: '2', name: 'PS5 - Standard #2', type: 'ps5_standard', characteristics: 'Écran 1080p, Manette standard', smartPlugIp: '192.168.1.102', status: 'libre' },
-      { id: '3', name: 'PS5 - Standard #3', type: 'ps5_standard', characteristics: 'Écran 1080p, Manette standard', smartPlugIp: '192.168.1.103', status: 'hors-service' },
-      { id: '4', name: 'PS5 - VIP #2', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Canapé Confort VIP', smartPlugIp: '192.168.1.104', status: 'occupe', clientName: 'Marc_K', minutesRemaining: 120, totalDuration: 180 },
-      { id: '5', name: 'PS4 - Standard #1', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.105', status: 'libre' },
-      { id: '6', name: 'PS4 - Standard #2', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.106', status: 'libre' },
-      { id: '7', name: 'PS5 - VIP #3', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Canapé Confort VIP', smartPlugIp: '192.168.1.107', status: 'occupe', clientName: 'Alain_T', minutesRemaining: 15, totalDuration: 60 },
-      { id: '8', name: 'PS4 - Standard #3', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.108', status: 'libre' },
-    ];
-  });
-
-  useEffect(() => {
-    localStorage.setItem('playcontrol_postes', JSON.stringify(postes));
-  }, [postes]);
-
-  // Clients depuis la base unifiée (localStorage)
-  const [memberClients, setMemberClients] = useState<MemberClient[]>(getClients);
-
-  // Synchroniser si une mise à jour externe est effectuée
-  useEffect(() => {
-    const handleStorage = () => setMemberClients(getClients());
-    window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
-  }, []);
-
-  const activeClients = memberClients.filter(c => c.status === 'active');
+  const { user } = useAuth();
+  const [postes, setPostes] = useState<GameStation[]>([]);
+  const [materialTypes, setMaterialTypes] = useState<MaterialType[]>([]);
+  const [memberClients, setMemberClients] = useState<MemberClient[]>([]);
+  const [dbPackages, setDbPackages] = useState<AbonnementPackage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [paymentMethod, setPaymentMethod] = useState<'espèces' | 'mobile_money'>('espèces');
 
   // Filters
   const [filterType, setFilterType] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'libre' | 'occupe' | 'hors-service'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'libre' | 'en-attente' | 'occupe' | 'hors-service'>('all');
   const [searchTerm, setSearchTerm] = useState('');
-  
-  const materialTypes = getMaterialTypes();
 
   // Modals state
   const [showLaunchModal, setShowLaunchModal] = useState<GameStation | null>(null);
@@ -152,10 +109,7 @@ export const CaissierDashboard: React.FC = () => {
   // Session Launch states
   const [isGuest, setIsGuest] = useState(true);
   const [clientSearch, setClientSearch] = useState(''); // recherche dans la liste clients
-  const [selectedClient, setSelectedClient] = useState(() => {
-    const clients = getClients().filter(c => c.status === 'active');
-    return clients.length > 0 ? clients[0].username : '';
-  });
+  const [selectedClient, setSelectedClient] = useState('');
   const [launchMode, setLaunchMode] = useState<'time' | 'abonnement'>('time');
   const [selectedDuration, setSelectedDuration] = useState<number>(60); // 60 minutes
   const [customDuration, setCustomDuration] = useState<string>('');
@@ -182,24 +136,158 @@ export const CaissierDashboard: React.FC = () => {
     setConfirmModal({ isOpen: true, title, message, onConfirm, type });
   };
 
-  // Live Timer Effect — ne décompte que sur les postes 'occupe' (session activée par le joueur)
+  const fetchClientsOnly = async () => {
+    try {
+      const { data: clData, error: clError } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('status', 'active');
+      if (clError) throw clError;
+      
+      const mapped = (clData || []).map(c => ({
+        id: c.id,
+        username: c.username,
+        fullName: c.full_name,
+        phone: c.phone || '',
+        balance: c.balance,
+        abonnementType: c.abonnement_type,
+        abonnementExpiration: c.abonnement_expiration,
+        status: c.status,
+        abonnementRemainingTime: c.abonnement_remaining_time
+      }));
+      setMemberClients(mapped);
+      if (mapped.length > 0 && !selectedClient) {
+        setSelectedClient(mapped[0].username);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      
+      const { data: mtData, error: mtError } = await supabase
+        .from('material_types')
+        .select('*')
+        .order('created_at', { ascending: true });
+      if (mtError) throw mtError;
+      setMaterialTypes((mtData || []).map(r => ({
+        id: r.id,
+        type: r.type,
+        label: r.label,
+        price: r.price,
+        durationMinutes: r.duration_minutes
+      })));
+
+      await fetchClientsOnly();
+
+      const { data: pkgData, error: pkgError } = await supabase
+        .from('abonnement_packages')
+        .select('*');
+      if (pkgError) throw pkgError;
+      setDbPackages(pkgData || []);
+
+      const { data: ptData, error: ptError } = await supabase
+        .from('postes')
+        .select('*')
+        .order('name', { ascending: true });
+      if (ptError) throw ptError;
+      setPostes((ptData || []).map(mapPosteFromDb));
+    } catch (err: any) {
+      showToastMsg(err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      setPostes(prevPostes =>
-        prevPostes.map(post => {
-          if (post.status === 'occupe' && post.minutesRemaining !== undefined) {
-            if (post.minutesRemaining <= 1) {
-              showToastMsg(`La session sur "${post.name}" pour "${post.clientName}" est terminée.`);
-              return { ...post, status: 'libre', clientName: undefined, sessionCode: undefined, minutesRemaining: undefined, totalDuration: undefined };
-            }
-            return { ...post, minutesRemaining: post.minutesRemaining - 1 };
+    fetchData();
+
+    // Subscribe to postes changes
+    const channel = supabase
+      .channel('realtime-postes-cashier')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'postes' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newPost = mapPosteFromDb(payload.new);
+            setPostes(prev => {
+              if (prev.some(p => p.id === newPost.id)) return prev;
+              return [...prev, newPost].sort((a, b) => a.name.localeCompare(b.name));
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = mapPosteFromDb(payload.new);
+            setPostes(prev => prev.map(p => p.id === updated.id ? updated : p));
+          } else if (payload.eventType === 'DELETE') {
+            setPostes(prev => prev.filter(p => p.id !== payload.old.id));
           }
-          return post;
-        })
-      );
-    }, 60000); // Update every minute
-    return () => clearInterval(interval);
+        }
+      )
+      .subscribe();
+
+    // Subscribe to clients changes
+    const clientChannel = supabase
+      .channel('realtime-clients-cashier')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'clients' },
+        () => {
+          fetchClientsOnly();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+      supabase.removeChannel(clientChannel);
+    };
   }, []);
+
+  // Safe Live Timer Effect for database
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const occupied = postes.filter(p => p.status === 'occupe' && p.minutesRemaining !== undefined);
+      for (const post of occupied) {
+        const now = new Date().getTime();
+        const updatedTime = post.updatedAt ? new Date(post.updatedAt).getTime() : 0;
+        
+        // If updated less than 55 seconds ago, skip to prevent double decrement
+        if (now - updatedTime < 55000) {
+          continue;
+        }
+
+        const nextMin = (post.minutesRemaining || 0) - 1;
+        if (nextMin <= 0) {
+          // Time's up! Return to libre in database
+          await supabase
+            .from('postes')
+            .update({
+              status: 'libre',
+              client_name: null,
+              session_code: null,
+              minutes_remaining: null,
+              total_duration: null
+            })
+            .eq('id', post.id);
+          
+          showToastMsg(`La session sur "${post.name}" pour "${post.clientName}" est terminée.`);
+        } else {
+          // Decrement by 1 in database
+          await supabase
+            .from('postes')
+            .update({
+              minutes_remaining: nextMin
+            })
+            .eq('id', post.id);
+        }
+      }
+    }, 60000); // Check every minute
+    
+    return () => clearInterval(interval);
+  }, [postes]);
 
   // Out of Service Toggle
   const handleToggleOutOfService = (id: string, name: string, currentStatus: GameStation['status']) => {
@@ -207,41 +295,94 @@ export const CaissierDashboard: React.FC = () => {
     openConfirm(
       isHS ? "Remettre en service" : "Mettre hors service",
       isHS ? `Voulez-vous remettre en service le poste "${name}" ?` : `Voulez-vous suspendre temporairement le poste "${name}" pour maintenance ou panne ?`,
-      () => {
-        setPostes(postes.map(p => {
-          if (p.id === id) {
-            return { ...p, status: isHS ? 'libre' : 'hors-service', clientName: undefined, sessionCode: undefined, minutesRemaining: undefined };
-          }
-          return p;
-        }));
+      async () => {
+        const { error } = await supabase
+          .from('postes')
+          .update({
+            status: isHS ? 'libre' : 'hors-service',
+            client_name: null,
+            session_code: null,
+            minutes_remaining: null,
+            total_duration: null
+          })
+          .eq('id', id);
+
+        if (error) {
+          showToastMsg(error.message, 'error');
+          return;
+        }
+
         showToastMsg(`Le poste "${name}" est désormais ${isHS ? 'Libre' : 'Hors Service'}.`);
       },
       isHS ? 'info' : 'warning'
     );
   };
 
-  // Launch Session
-  const handleLaunchSession = (e: React.FormEvent) => {
+  const activeClients = memberClients.filter(c => c.status === 'active');
+
+  const handleLaunchSession = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showLaunchModal) return;
 
+    const duration = customDuration ? Number(customDuration) : selectedDuration;
+    if (duration <= 0) {
+      showToastMsg("Veuillez choisir ou saisir une durée valide.", "error");
+      return;
+    }
+
     let finalClientName = '';
     let finalDuration = 0;
+    let cost = 0;
 
-    const duration = selectedDuration;
+    const targetType = materialTypes.find(t => t.type === showLaunchModal.type);
+    const rate = targetType ? targetType.price : 1000;
+    const rateDuration = targetType ? targetType.durationMinutes : 60;
+    cost = Math.ceil((rate / rateDuration) * duration);
 
     if (isGuest) {
       // Pour un invité temporaire : pas de nom requis, on génère un identifiant
       finalClientName = `Invité-${Date.now().toString(36).toUpperCase().slice(-4)}`;
       finalDuration = duration;
+
+      // Récupérer le shift actif du caissier
+      const { data: openShift, error: shiftError } = await supabase
+        .from('shifts')
+        .select('id')
+        .eq('cashier_id', user?.id)
+        .eq('status', 'open')
+        .maybeSingle();
+
+      if (shiftError) {
+        showToastMsg("Erreur lors de la vérification de la caisse : " + shiftError.message, 'error');
+        return;
+      }
+
+      if (!openShift) {
+        showToastMsg("Aucun shift actif. Veuillez ouvrir la caisse d'abord.", 'error');
+        return;
+      }
+
+      // Enregistrer la transaction d'espèces/MM
+      if (cost > 0) {
+        const { error: txError } = await supabase
+          .from('transactions')
+          .insert({
+            shift_id: openShift.id,
+            client_name: finalClientName,
+            poste_name: showLaunchModal.name,
+            amount: cost,
+            payment_method: paymentMethod,
+            transaction_type: 'session'
+          });
+
+        if (txError) {
+          showToastMsg("Erreur lors de l'enregistrement de la transaction : " + txError.message, 'error');
+          return;
+        }
+      }
     } else {
       const targetClient = activeClients.find(c => c.username === selectedClient);
       if (!targetClient) return;
-
-      const targetType = materialTypes.find(t => t.type === showLaunchModal.type);
-      const rate = targetType ? targetType.price : 1000;
-      const rateDuration = targetType ? targetType.durationMinutes : 60;
-      const cost = Math.ceil((rate / rateDuration) * duration);
 
       if (launchMode === 'time' && targetClient.balance < cost) {
         showToastMsg(`Solde insuffisant pour ${targetClient.fullName}. Requis : ${cost} FCFA. Solde : ${targetClient.balance} FCFA.`, 'error');
@@ -254,97 +395,293 @@ export const CaissierDashboard: React.FC = () => {
       }
 
       finalClientName = targetClient.username;
-      finalDuration = launchMode === 'time' ? duration : (targetClient.abonnementRemainingTime || 60);
+      finalDuration = launchMode === 'time' ? duration : Math.min(duration, targetClient.abonnementRemainingTime || 60);
+
+      // Déduire le solde ou le temps du membre
+      if (launchMode === 'time') {
+        const { error: clErr } = await supabase
+          .from('clients')
+          .update({ balance: targetClient.balance - cost })
+          .eq('id', targetClient.id);
+        if (clErr) {
+          showToastMsg(clErr.message, 'error');
+          return;
+        }
+      } else {
+        const { error: clErr } = await supabase
+          .from('clients')
+          .update({ abonnement_remaining_time: Math.max(0, (targetClient.abonnementRemainingTime || 0) - finalDuration) })
+          .eq('id', targetClient.id);
+        if (clErr) {
+          showToastMsg(clErr.message, 'error');
+          return;
+        }
+      }
     }
 
-    // Générer un code de session unique
     const code = generateSessionCode();
 
-    setPostes(postes.map(p => {
-      if (p.id === showLaunchModal.id) {
-        return {
-          ...p,
-          status: 'en-attente',  // En attente que le joueur saisisse le code
-          clientName: finalClientName,
-          sessionCode: code,
-          minutesRemaining: finalDuration,
-          totalDuration: finalDuration
-        };
-      }
-      return p;
-    }));
+    const { error } = await supabase
+      .from('postes')
+      .update({
+        status: 'en-attente',
+        client_name: finalClientName,
+        session_code: code,
+        minutes_remaining: finalDuration,
+        total_duration: finalDuration
+      })
+      .eq('id', showLaunchModal.id);
 
+    if (error) {
+      // Annuler la déduction du membre en cas d'erreur
+      if (!isGuest) {
+        const targetClient = activeClients.find(c => c.username === selectedClient);
+        if (targetClient) {
+          if (launchMode === 'time') {
+            await supabase.from('clients').update({ balance: targetClient.balance }).eq('id', targetClient.id);
+          } else {
+            await supabase.from('clients').update({ abonnement_remaining_time: targetClient.abonnementRemainingTime }).eq('id', targetClient.id);
+          }
+        }
+      }
+      showToastMsg(error.message, 'error');
+      return;
+    }
+
+    showToastMsg(`Code généré pour "${finalClientName}" sur "${showLaunchModal.name}" : ${code}`);
     setShowLaunchModal(null);
     setIsGuest(true);
     setClientSearch('');
-    showToastMsg(`Code généré pour "${finalClientName}" sur "${showLaunchModal.name}" : ${code}`);
   };
 
-  // Terminate Session early (works for both 'en-attente' and 'occupe')
+  // Terminate Session early (handles refunding balance or subscription time)
   const handleEndSession = (id: string, name: string, clientName: string) => {
+    const post = postes.find(p => p.id === id);
+    if (!post) return;
+
     openConfirm(
       "Annuler / Terminer la session",
       `Êtes-vous sûr de vouloir annuler la session de "${clientName}" sur le poste "${name}" ?`,
-      () => {
-        setPostes(postes.map(p => {
-          if (p.id === id) {
-            return { ...p, status: 'libre', clientName: undefined, sessionCode: undefined, minutesRemaining: undefined, totalDuration: undefined };
+      async () => {
+        // Refund logic for members
+        if (post.clientName && !post.clientName.startsWith('Invité-')) {
+          const { data: clData } = await supabase
+            .from('clients')
+            .select('*')
+            .eq('username', post.clientName)
+            .maybeSingle();
+
+          if (clData) {
+            const minutesToRefund = post.minutesRemaining || 0;
+            if (minutesToRefund > 0) {
+              const targetType = materialTypes.find(t => t.type === post.type);
+              const rate = targetType ? targetType.price : 1000;
+              const rateDuration = targetType ? targetType.durationMinutes : 60;
+
+              if (clData.abonnement_type !== 'Aucun') {
+                await supabase
+                  .from('clients')
+                  .update({ abonnement_remaining_time: (clData.abonnement_remaining_time || 0) + minutesToRefund })
+                  .eq('id', clData.id);
+              } else {
+                const refundCost = Math.floor((rate / rateDuration) * minutesToRefund);
+                await supabase
+                  .from('clients')
+                  .update({ balance: clData.balance + refundCost })
+                  .eq('id', clData.id);
+              }
+            }
           }
-          return p;
-        }));
-        showToastMsg(`La session sur "${name}" a été annulée.`);
+        }
+
+        const { error } = await supabase
+          .from('postes')
+          .update({
+            status: 'libre',
+            client_name: null,
+            session_code: null,
+            minutes_remaining: null,
+            total_duration: null
+          })
+          .eq('id', id);
+
+        if (error) {
+          showToastMsg(error.message, 'error');
+          return;
+        }
+
+        showToastMsg(`La session sur "${name}" a été arrêtée.`);
       },
       'danger'
     );
   };
 
   // Extend Session
-  const handleExtendSession = (e: React.FormEvent) => {
+  const handleExtendSession = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showExtendModal || showExtendModal.minutesRemaining === undefined) return;
 
     const extMinutes = customDuration ? Number(customDuration) : selectedDuration;
 
-    setPostes(postes.map(p => {
-      if (p.id === showExtendModal.id) {
-        return {
-          ...p,
-          minutesRemaining: (p.minutesRemaining || 0) + extMinutes,
-          totalDuration: (p.totalDuration || 0) + extMinutes
-        };
-      }
-      return p;
-    }));
+    const targetType = materialTypes.find(t => t.type === showExtendModal.type);
+    const rate = targetType ? targetType.price : 1000;
+    const rateDuration = targetType ? targetType.durationMinutes : 60;
+    const cost = Math.ceil((rate / rateDuration) * extMinutes);
 
-    setShowExtendModal(null);
-    setCustomDuration('');
-    showToastMsg(`Session sur "${showExtendModal.name}" prolongée de ${extMinutes} minutes.`);
+    try {
+      if (showExtendModal.clientName && !showExtendModal.clientName.startsWith('Invité-')) {
+        const { data: clData } = await supabase
+          .from('clients')
+          .select('*')
+          .eq('username', showExtendModal.clientName)
+          .maybeSingle();
+
+        if (!clData) {
+          showToastMsg("Impossible de charger les données du membre.", "error");
+          return;
+        }
+
+        if (clData.abonnement_type !== 'Aucun') {
+          if ((clData.abonnement_remaining_time || 0) < extMinutes) {
+            showToastMsg(`Temps d'abonnement insuffisant (${clData.abonnement_remaining_time} min restantes).`, 'error');
+            return;
+          }
+          const { error: clErr } = await supabase
+            .from('clients')
+            .update({ abonnement_remaining_time: clData.abonnement_remaining_time - extMinutes })
+            .eq('id', clData.id);
+          if (clErr) {
+            showToastMsg(clErr.message, 'error');
+            return;
+          }
+        } else {
+          if (clData.balance < cost) {
+            showToastMsg(`Solde insuffisant pour prolonger. Requis : ${cost} FCFA. Solde : ${clData.balance} FCFA.`, 'error');
+            return;
+          }
+          const { error: clErr } = await supabase
+            .from('clients')
+            .update({ balance: clData.balance - cost })
+            .eq('id', clData.id);
+          if (clErr) {
+            showToastMsg(clErr.message, 'error');
+            return;
+          }
+        }
+      } else {
+        // Guest extension: record payment in transactions
+        const { data: openShift, error: shiftError } = await supabase
+          .from('shifts')
+          .select('id')
+          .eq('cashier_id', user?.id)
+          .eq('status', 'open')
+          .maybeSingle();
+
+        if (shiftError) {
+          showToastMsg("Erreur lors de la vérification de la caisse : " + shiftError.message, 'error');
+          return;
+        }
+
+        if (!openShift) {
+          showToastMsg("Aucun shift actif. Veuillez ouvrir la caisse d'abord.", 'error');
+          return;
+        }
+
+        if (cost > 0) {
+          const { error: txError } = await supabase
+            .from('transactions')
+            .insert({
+              shift_id: openShift.id,
+              client_name: showExtendModal.clientName || 'Invité',
+              poste_name: showExtendModal.name,
+              amount: cost,
+              payment_method: paymentMethod,
+              transaction_type: 'session'
+            });
+
+          if (txError) {
+            showToastMsg("Erreur lors de l'enregistrement de la transaction : " + txError.message, 'error');
+            return;
+          }
+        }
+      }
+
+      const { error } = await supabase
+        .from('postes')
+        .update({
+          minutes_remaining: (showExtendModal.minutesRemaining || 0) + extMinutes,
+          total_duration: (showExtendModal.totalDuration || 0) + extMinutes
+        })
+        .eq('id', showExtendModal.id);
+
+      if (error) {
+        // Rollback member deduction on error
+        if (showExtendModal.clientName && !showExtendModal.clientName.startsWith('Invité-')) {
+          const { data: clData } = await supabase
+            .from('clients')
+            .select('*')
+            .eq('username', showExtendModal.clientName)
+            .maybeSingle();
+          if (clData) {
+            if (clData.abonnement_type !== 'Aucun') {
+              await supabase.from('clients').update({ abonnement_remaining_time: clData.abonnement_remaining_time }).eq('id', clData.id);
+            } else {
+              await supabase.from('clients').update({ balance: clData.balance }).eq('id', clData.id);
+            }
+          }
+        }
+        showToastMsg(error.message, 'error');
+        return;
+      }
+
+      setShowExtendModal(null);
+      setCustomDuration('');
+      showToastMsg(`Session sur "${showExtendModal.name}" prolongée de ${extMinutes} minutes.`);
+    } catch (err: any) {
+      showToastMsg(err.message, 'error');
+    }
   };
 
   // Transfer Session
   const [selectedTransferPosteId, setSelectedTransferPosteId] = useState('');
-  const handleTransferSession = (e: React.FormEvent) => {
+  const handleTransferSession = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showTransferModal || !selectedTransferPosteId) return;
 
     const targetPoste = postes.find(p => p.id === selectedTransferPosteId);
     if (!targetPoste) return;
 
-    setPostes(postes.map(p => {
-      if (p.id === showTransferModal.id) {
-        return { ...p, status: 'libre', clientName: undefined, minutesRemaining: undefined, totalDuration: undefined };
-      }
-      if (p.id === selectedTransferPosteId) {
-        return {
-          ...p,
-          status: 'occupe',
-          clientName: showTransferModal.clientName,
-          minutesRemaining: showTransferModal.minutesRemaining,
-          totalDuration: showTransferModal.totalDuration
-        };
-      }
-      return p;
-    }));
+    const { error: err1 } = await supabase
+      .from('postes')
+      .update({
+        status: showTransferModal.status,
+        client_name: showTransferModal.clientName || null,
+        session_code: showTransferModal.sessionCode || null,
+        minutes_remaining: showTransferModal.minutesRemaining || null,
+        total_duration: showTransferModal.totalDuration || null
+      })
+      .eq('id', selectedTransferPosteId);
+
+    if (err1) {
+      showToastMsg(err1.message, 'error');
+      return;
+    }
+
+    const { error: err2 } = await supabase
+      .from('postes')
+      .update({
+        status: 'libre',
+        client_name: null,
+        session_code: null,
+        minutes_remaining: null,
+        total_duration: null
+      })
+      .eq('id', showTransferModal.id);
+
+    if (err2) {
+      showToastMsg(err2.message, 'error');
+      return;
+    }
 
     setShowTransferModal(null);
     setSelectedTransferPosteId('');
@@ -654,6 +991,14 @@ export const CaissierDashboard: React.FC = () => {
       </div>
     );
   };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '400px' }}>
+        <p style={{ color: 'var(--neutral-500)', fontWeight: 600 }}>Chargement du tableau de bord depuis Supabase...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
@@ -1087,7 +1432,35 @@ export const CaissierDashboard: React.FC = () => {
                 </div>
               )}
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-4)' }}>
+              {isGuest && (
+                <div className="input-group">
+                  <label className="input-label" style={{ fontWeight: 600 }}>Moyen de paiement</label>
+                  <div style={{ display: 'flex', gap: 'var(--space-4)', marginTop: 'var(--space-1)' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: 'var(--font-sm)', fontWeight: 500, color: 'var(--neutral-700)' }}>
+                      <input 
+                        type="radio" 
+                        name="guestPaymentMethod" 
+                        checked={paymentMethod === 'espèces'} 
+                        onChange={() => setPaymentMethod('espèces')}
+                        style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                      />
+                      Espèces
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: 'var(--font-sm)', fontWeight: 500, color: 'var(--neutral-700)' }}>
+                      <input 
+                        type="radio" 
+                        name="guestPaymentMethod" 
+                        checked={paymentMethod === 'mobile_money'} 
+                        onChange={() => setPaymentMethod('mobile_money')}
+                        style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                      />
+                      Mobile Money
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-6)' }}>
                 <button type="button" className="btn btn-secondary" onClick={() => { setShowLaunchModal(null); setIsGuest(true); setClientSearch(''); }}>Annuler</button>
                 <button type="submit" className="btn btn-black">Activer le poste</button>
               </div>
@@ -1162,7 +1535,35 @@ export const CaissierDashboard: React.FC = () => {
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-4)' }}>
+              {showExtendModal.clientName?.startsWith('Invité-') && (
+                <div className="input-group">
+                  <label className="input-label" style={{ fontWeight: 600 }}>Moyen de paiement</label>
+                  <div style={{ display: 'flex', gap: 'var(--space-4)', marginTop: 'var(--space-1)' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: 'var(--font-sm)', fontWeight: 500, color: 'var(--neutral-700)' }}>
+                      <input 
+                        type="radio" 
+                        name="extendPaymentMethod" 
+                        checked={paymentMethod === 'espèces'} 
+                        onChange={() => setPaymentMethod('espèces')}
+                        style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                      />
+                      Espèces
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: 'var(--font-sm)', fontWeight: 500, color: 'var(--neutral-700)' }}>
+                      <input 
+                        type="radio" 
+                        name="extendPaymentMethod" 
+                        checked={paymentMethod === 'mobile_money'} 
+                        onChange={() => setPaymentMethod('mobile_money')}
+                        style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                      />
+                      Mobile Money
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-6)' }}>
                 <button type="button" className="btn btn-secondary" onClick={() => setShowExtendModal(null)}>Annuler</button>
                 <button type="submit" className="btn btn-black">Prolonger</button>
               </div>

@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Search, Trash2, ShieldAlert, CreditCard, Award, UserMinus, UserCheck, Edit2 } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
+import { useAuth } from '../../hooks/useAuth';
 
 interface MemberClient {
   id: string;
@@ -11,30 +13,57 @@ interface MemberClient {
   abonnementType: 'Aucun' | 'Journalier' | 'Hebdomadaire' | 'Mensuel' | 'VIP';
   abonnementExpiration: string | null;
   status: 'active' | 'suspended';
+  abonnementRemainingTime?: number; // In minutes
 }
 
 export const CaissierClients: React.FC = () => {
-  const [clients, setClients] = useState<MemberClient[]>(() => {
-    const saved = localStorage.getItem('playcontrol_clients');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        // ignore
-      }
-    }
-    return [
-      { id: '1', username: 'Gamer_Pro', fullName: 'Arthur Mbe', phone: '+237 699 99 99 99', balance: 5400, abonnementType: 'VIP', abonnementExpiration: '2026-07-15', status: 'active' },
-      { id: '2', username: 'Marc_K', fullName: 'Marc Kemajou', phone: '+237 677 77 77 77', balance: 12500, abonnementType: 'Aucun', abonnementExpiration: null, status: 'active' },
-      { id: '3', username: 'Alain_T', fullName: 'Alain Tchakounté', phone: '+237 655 55 55 55', balance: 750, abonnementType: 'Aucun', abonnementExpiration: null, status: 'active' },
-      { id: '4', username: 'Serge_F', fullName: 'Serge Fotso', phone: '+237 688 88 88 88', balance: 3200, abonnementType: 'Hebdomadaire', abonnementExpiration: '2026-06-22', status: 'active' },
-      { id: '5', username: 'Amadou_B', fullName: 'Amadou Bello', phone: '+234 80 31 23 45 67', balance: 0, abonnementType: 'Aucun', abonnementExpiration: null, status: 'suspended' },
-    ];
-  });
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [clients, setClients] = useState<MemberClient[]>([]);
+  const [dbPackages, setDbPackages] = useState<any[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState<'espèces' | 'mobile_money'>('espèces');
 
-  React.useEffect(() => {
-    localStorage.setItem('playcontrol_clients', JSON.stringify(clients));
-  }, [clients]);
+  const fetchClients = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('clients')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setClients(
+        (data || []).map(c => ({
+          id: c.id,
+          username: c.username,
+          fullName: c.full_name,
+          phone: c.phone || '',
+          balance: c.balance,
+          abonnementType: c.abonnement_type as any,
+          abonnementExpiration: c.abonnement_expiration ? c.abonnement_expiration.split('T')[0] : null,
+          status: c.status as any,
+          abonnementRemainingTime: c.abonnement_remaining_time || 0
+        }))
+      );
+    } catch (e: any) {
+      showToastMsg(e.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchPackages = async () => {
+    try {
+      const { data, error } = await supabase.from('abonnement_packages').select('*');
+      if (!error && data) {
+        setDbPackages(data);
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    fetchClients();
+    fetchPackages();
+  }, []);
 
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -139,12 +168,20 @@ export const CaissierClients: React.FC = () => {
     setEditRawPhoneNum(rawNum);
   };
 
-  const handleSaveEditClient = (e: React.FormEvent) => {
+  const handleSaveEditClient = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showEditModal) return;
     if (!editFullName || !editUsername) return;
 
-    if (clients.some(c => c.id !== showEditModal.id && c.username.toLowerCase() === editUsername.toLowerCase())) {
+    // Check unique username excluding current client
+    const { data: existing } = await supabase
+      .from('clients')
+      .select('id')
+      .eq('username', editUsername.replace(/\s/g, '').toLowerCase())
+      .neq('id', showEditModal.id)
+      .maybeSingle();
+
+    if (existing) {
       showToastMsg(`L'identifiant @${editUsername} est déjà utilisé par un autre client.`, 'error');
       return;
     }
@@ -166,23 +203,26 @@ export const CaissierClients: React.FC = () => {
 
     const fullPhone = `${editPhoneCountryCode} ${formattedPhoneNum}`;
 
-    setClients(clients.map(c => {
-      if (c.id === showEditModal.id) {
-        return {
-          ...c,
-          fullName: editFullName,
-          username: editUsername,
-          phone: fullPhone
-        };
-      }
-      return c;
-    }));
+    const { error } = await supabase
+      .from('clients')
+      .update({
+        full_name: editFullName,
+        username: editUsername.replace(/\s/g, '').toLowerCase(),
+        phone: fullPhone
+      })
+      .eq('id', showEditModal.id);
 
+    if (error) {
+      showToastMsg(error.message, 'error');
+      return;
+    }
+
+    fetchClients();
     setShowEditModal(null);
     showToastMsg(`Les informations du client @${editUsername} ont été mises à jour.`);
   };
 
-  const handleCreateClient = (e: React.FormEvent) => {
+  const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName || !newUsername) return;
 
@@ -191,25 +231,40 @@ export const CaissierClients: React.FC = () => {
       return;
     }
 
-    if (clients.some(c => c.username.toLowerCase() === newUsername.toLowerCase())) {
+    // Username unique validation in DB
+    const { data: existing } = await supabase
+      .from('clients')
+      .select('id')
+      .eq('username', newUsername.replace(/\s/g, '').toLowerCase())
+      .maybeSingle();
+
+    if (existing) {
       showToastMsg(`L'identifiant "@${newUsername}" est déjà utilisé.`, 'error');
       return;
     }
 
     const finalPhone = `${phoneCountryCode} ${rawPhoneNum.trim()}`;
 
-    const newClient: MemberClient = {
-      id: String(clients.length + 1),
-      username: newUsername.replace(/\s/g, ''),
-      fullName: newName,
+    const newClient = {
+      username: newUsername.replace(/\s/g, '').toLowerCase(),
+      full_name: newName,
       phone: finalPhone,
       balance: 0,
-      abonnementType: 'Aucun',
-      abonnementExpiration: null,
+      abonnement_type: 'Aucun',
+      abonnement_expiration: null,
       status: 'active'
     };
 
-    setClients([...clients, newClient]);
+    const { error } = await supabase
+      .from('clients')
+      .insert(newClient);
+
+    if (error) {
+      showToastMsg(error.message, 'error');
+      return;
+    }
+
+    fetchClients();
     setShowAddModal(false);
     setNewName('');
     setNewUsername('');
@@ -217,7 +272,7 @@ export const CaissierClients: React.FC = () => {
     showToastMsg(`Le compte membre de "${newName}" (@${newUsername}) a été créé.`);
   };
 
-  const handleRecharge = (e: React.FormEvent) => {
+  const handleRecharge = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showRechargeModal) return;
 
@@ -227,56 +282,93 @@ export const CaissierClients: React.FC = () => {
       return;
     }
 
-    setClients(clients.map(c => {
-      if (c.id === showRechargeModal.id) {
-        return { ...c, balance: c.balance + amount };
-      }
-      return c;
-    }));
+    try {
+      const { data: openShift, error: shiftError } = await supabase
+        .from('shifts')
+        .select('id')
+        .eq('cashier_id', user?.id)
+        .eq('status', 'open')
+        .maybeSingle();
 
-    setShowRechargeModal(null);
-    setCustomRecharge('');
-    showToastMsg(`Le compte de @${showRechargeModal.username} a été crédité de ${amount.toLocaleString()} FCFA.`);
+      if (shiftError) throw shiftError;
+
+      if (!openShift) {
+        showToastMsg("Aucun shift actif. Veuillez ouvrir la caisse d'abord.", 'error');
+        return;
+      }
+
+      const { error: balanceError } = await supabase
+        .from('clients')
+        .update({
+          balance: showRechargeModal.balance + amount
+        })
+        .eq('id', showRechargeModal.id);
+
+      if (balanceError) throw balanceError;
+
+      const { error: txError } = await supabase
+        .from('transactions')
+        .insert({
+          shift_id: openShift.id,
+          client_id: showRechargeModal.id,
+          client_name: showRechargeModal.fullName,
+          amount: amount,
+          payment_method: paymentMethod,
+          transaction_type: 'recharge'
+        });
+
+      if (txError) throw txError;
+
+      fetchClients();
+      setShowRechargeModal(null);
+      setCustomRecharge('');
+      showToastMsg(`Le compte de @${showRechargeModal.username} a été crédité de ${amount.toLocaleString()} FCFA.`);
+    } catch (err: any) {
+      showToastMsg(err.message, 'error');
+    }
   };
 
-  const handleAbonnementAssign = (e: React.FormEvent) => {
+  const handleAbonnementAssign = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showAbonnementModal) return;
 
-    const prices = {
-      Journalier: 1500,
-      Hebdomadaire: 5000,
-      Mensuel: 15000,
-      VIP: 25000
-    };
-
-    const cost = prices[selectedAbonnement];
+    const targetPkg = dbPackages.find(p => p.type === selectedAbonnement);
+    const cost = targetPkg ? targetPkg.price : (selectedAbonnement === 'Journalier' ? 1500 : selectedAbonnement === 'Hebdomadaire' ? 5000 : selectedAbonnement === 'Mensuel' ? 15000 : 25000);
+    const hours = targetPkg ? targetPkg.duration_hours : (selectedAbonnement === 'Journalier' ? 2 : selectedAbonnement === 'Hebdomadaire' ? 8 : selectedAbonnement === 'Mensuel' ? 25 : 50);
+    const mins = hours * 60;
 
     if (showAbonnementModal.balance < cost) {
-      showToastMsg(`Solde insuffisant. Forfait : ${cost} FCFA. Solde actuel : ${showAbonnementModal.balance} FCFA.`, 'error');
+      showToastMsg(`Solde insuffisant. Forfait : ${cost} FCFA. Solde actuel : ${showAbonnementModal.balance} FCFA. Veuillez recharger d'abord.`, 'error');
       return;
     }
 
     const today = new Date();
-    if (selectedAbonnement === 'Journalier') today.setDate(today.getDate() + 1);
-    else if (selectedAbonnement === 'Hebdomadaire') today.setDate(today.getDate() + 7);
-    else if (selectedAbonnement === 'Mensuel') today.setMonth(today.getMonth() + 1);
-    else if (selectedAbonnement === 'VIP') today.setMonth(today.getMonth() + 1);
+    if (selectedAbonnement === 'Journalier') {
+      today.setDate(today.getDate() + 1);
+    } else if (selectedAbonnement === 'Hebdomadaire') {
+      today.setDate(today.getDate() + 7);
+    } else if (selectedAbonnement === 'Mensuel' || selectedAbonnement === 'VIP') {
+      today.setMonth(today.getMonth() + 1);
+    }
 
-    const expStr = today.toISOString().split('T')[0];
+    const expStr = today.toISOString();
 
-    setClients(clients.map(c => {
-      if (c.id === showAbonnementModal.id) {
-        return {
-          ...c,
-          balance: c.balance - cost,
-          abonnementType: selectedAbonnement,
-          abonnementExpiration: expStr
-        };
-      }
-      return c;
-    }));
+    const { error } = await supabase
+      .from('clients')
+      .update({
+        balance: showAbonnementModal.balance - cost,
+        abonnement_type: selectedAbonnement,
+        abonnement_expiration: expStr,
+        abonnement_remaining_time: mins
+      })
+      .eq('id', showAbonnementModal.id);
 
+    if (error) {
+      showToastMsg(error.message, 'error');
+      return;
+    }
+
+    fetchClients();
     setShowAbonnementModal(null);
     showToastMsg(`Le pass "${selectedAbonnement}" a été attribué avec succès à @${showAbonnementModal.username}.`);
   };
@@ -288,13 +380,20 @@ export const CaissierClients: React.FC = () => {
       isSuspended 
         ? `Voulez-vous suspendre temporairement le compte de @${username} ?`
         : `Voulez-vous réactiver le compte de @${username} ?`,
-      () => {
-        setClients(clients.map(c => {
-          if (c.id === id) {
-            return { ...c, status: isSuspended ? 'suspended' : 'active' };
-          }
-          return c;
-        }));
+      async () => {
+        const { error } = await supabase
+          .from('clients')
+          .update({
+            status: isSuspended ? 'suspended' : 'active'
+          })
+          .eq('id', id);
+
+        if (error) {
+          showToastMsg(error.message, 'error');
+          return;
+        }
+
+        fetchClients();
         showToastMsg(`Le compte de @${username} est désormais ${isSuspended ? 'suspendu' : 'actif'}.`);
       },
       isSuspended ? 'warning' : 'info'
@@ -305,8 +404,18 @@ export const CaissierClients: React.FC = () => {
     openConfirm(
       "Supprimer le membre client",
       `Êtes-vous sûr de vouloir supprimer définitivement le membre @${username} ?`,
-      () => {
-        setClients(clients.filter(c => c.id !== id));
+      async () => {
+        const { error } = await supabase
+          .from('clients')
+          .delete()
+          .eq('id', id);
+
+        if (error) {
+          showToastMsg(error.message, 'error');
+          return;
+        }
+
+        fetchClients();
         showToastMsg(`Le compte de @${username} a été supprimé.`);
       },
       'danger'
@@ -318,6 +427,14 @@ export const CaissierClients: React.FC = () => {
     c.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
     c.phone.includes(searchTerm)
   );
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '400px' }}>
+        <p style={{ color: 'var(--neutral-500)', fontWeight: 600 }}>Chargement des clients depuis Supabase...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
@@ -715,7 +832,33 @@ export const CaissierClients: React.FC = () => {
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-4)' }}>
+              <div className="input-group">
+                <label className="input-label" style={{ fontWeight: 600 }}>Moyen de paiement</label>
+                <div style={{ display: 'flex', gap: 'var(--space-4)', marginTop: 'var(--space-1)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: 'var(--font-sm)', fontWeight: 500, color: 'var(--neutral-700)' }}>
+                    <input 
+                      type="radio" 
+                      name="rechargePaymentMethod" 
+                      checked={paymentMethod === 'espèces'} 
+                      onChange={() => setPaymentMethod('espèces')}
+                      style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                    />
+                    Espèces
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: 'var(--font-sm)', fontWeight: 500, color: 'var(--neutral-700)' }}>
+                    <input 
+                      type="radio" 
+                      name="rechargePaymentMethod" 
+                      checked={paymentMethod === 'mobile_money'} 
+                      onChange={() => setPaymentMethod('mobile_money')}
+                      style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                    />
+                    Mobile Money
+                  </label>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-6)' }}>
                 <button type="button" className="btn btn-secondary" onClick={() => setShowRechargeModal(null)}>Annuler</button>
                 <button type="submit" className="btn btn-black">Encaisser et Créditer</button>
               </div>

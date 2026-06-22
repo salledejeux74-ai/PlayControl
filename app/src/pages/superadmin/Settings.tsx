@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Save, Database, ShieldAlert, Cloud, RefreshCw, Landmark } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
 
 interface PendingSettingsUpdate {
   status: 'pending' | 'approved' | 'rejected';
@@ -16,50 +17,83 @@ export const SuperAdminSettings: React.FC = () => {
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(true);
   const [backupSchedule, setBackupSchedule] = useState('daily');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [settingsId, setSettingsId] = useState<string | null>(null);
 
-  const [pendingUpdate, setPendingUpdate] = useState<PendingSettingsUpdate | null>(() => {
-    const saved = localStorage.getItem('playcontrol_pending_settings_update');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed.status === 'pending') return parsed;
-      } catch (e) {}
+  const [pendingUpdate, setPendingUpdate] = useState<PendingSettingsUpdate | null>(null);
+
+  const fetchPendingSettings = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('settings')
+        .select('*')
+        .eq('is_active', true)
+        .limit(1)
+        .single();
+      if (error) throw error;
+      if (data) {
+        setSettingsId(data.id);
+        if (data.pending_update && (data.pending_update as any).status === 'pending') {
+          setPendingUpdate(data.pending_update as PendingSettingsUpdate);
+        } else {
+          setPendingUpdate(null);
+        }
+      }
+    } catch (e: any) {
+      console.error(e.message);
+    } finally {
+      setLoading(false);
     }
-    return null;
-  });
+  };
 
-  const handleApproveUpdate = () => {
-    if (!pendingUpdate) return;
+  useEffect(() => {
+    fetchPendingSettings();
+  }, []);
+
+  const handleApproveUpdate = async () => {
+    if (!pendingUpdate || !settingsId) return;
     
-    // Save to active settings
-    const activeSettings = {
-      salleName: pendingUpdate.salleName,
-      salleAddress: pendingUpdate.salleAddress,
-      phoneCountryCode: pendingUpdate.phoneCountryCode,
-      rawPhoneNum: pendingUpdate.rawPhoneNum
-    };
-    localStorage.setItem('playcontrol_active_settings', JSON.stringify(activeSettings));
-    
-    // Update pending status
-    const approvedRequest = {
-      ...pendingUpdate,
-      status: 'approved' as const
-    };
-    localStorage.setItem('playcontrol_pending_settings_update', JSON.stringify(approvedRequest));
+    const { error } = await supabase
+      .from('settings')
+      .update({
+        salle_name: pendingUpdate.salleName,
+        salle_address: pendingUpdate.salleAddress,
+        phone_country_code: pendingUpdate.phoneCountryCode,
+        raw_phone_num: pendingUpdate.rawPhoneNum,
+        pending_update: {
+          ...pendingUpdate,
+          status: 'approved'
+        }
+      })
+      .eq('id', settingsId);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
     
     setPendingUpdate(null);
     alert('Modification de profil de salle approuvée et appliquée avec succès !');
   };
 
-  const handleRejectUpdate = () => {
-    if (!pendingUpdate) return;
+  const handleRejectUpdate = async () => {
+    if (!pendingUpdate || !settingsId) return;
     
-    // Update pending status
-    const rejectedRequest = {
-      ...pendingUpdate,
-      status: 'rejected' as const
-    };
-    localStorage.setItem('playcontrol_pending_settings_update', JSON.stringify(rejectedRequest));
+    const { error } = await supabase
+      .from('settings')
+      .update({
+        pending_update: {
+          ...pendingUpdate,
+          status: 'rejected'
+        }
+      })
+      .eq('id', settingsId);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
     
     setPendingUpdate(null);
     alert('Modification de profil de salle rejetée.');
@@ -77,6 +111,14 @@ export const SuperAdminSettings: React.FC = () => {
       alert('Synchronisation globale cloud terminée avec succès !');
     }, 2000);
   };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '400px' }}>
+        <p style={{ color: 'var(--neutral-500)', fontWeight: 600 }}>Chargement des paramètres depuis Supabase...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>

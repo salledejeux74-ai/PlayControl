@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Gamepad2, Clock, Star, Play, LogOut, ArrowRight, KeyRound, ChevronRight } from 'lucide-react';
 import logoImg from '../../assets/logo.jpeg';
+import { supabase } from '../../lib/supabaseClient';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -27,6 +28,7 @@ interface GameStation {
   sessionCode?: string;
   minutesRemaining?: number;
   totalDuration?: number;
+  updatedAt?: string;
 }
 
 interface MaterialType {
@@ -39,37 +41,6 @@ interface MaterialType {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const getClients = (): MemberClient[] => {
-  try {
-    const saved = localStorage.getItem('playcontrol_clients');
-    if (saved) return JSON.parse(saved);
-  } catch { /* ignore */ }
-  return [];
-};
-
-const getPostes = (): GameStation[] => {
-  try {
-    const saved = localStorage.getItem('playcontrol_postes');
-    if (saved) return JSON.parse(saved);
-  } catch { /* ignore */ }
-  return [];
-};
-
-const getMaterialTypes = (): MaterialType[] => {
-  try {
-    const saved = localStorage.getItem('playcontrol_material_types');
-    if (saved) return JSON.parse(saved);
-  } catch { /* ignore */ }
-  return [
-    { id: '1', type: 'ps5_vip', label: 'Console PS5 (Zone VIP)', price: 1500, durationMinutes: 60 },
-    { id: '2', type: 'ps5_standard', label: 'Console PS5 (Zone Standard)', price: 1000, durationMinutes: 60 },
-    { id: '3', type: 'ps4_standard', label: 'Console PS4 (Zone Standard)', price: 800, durationMinutes: 60 },
-  ];
-};
-
-const savePostes = (postes: GameStation[]) =>
-  localStorage.setItem('playcontrol_postes', JSON.stringify(postes));
-
 const formatTime = (minutes: number): string => {
   if (minutes <= 0) return '0 min';
   const h = Math.floor(minutes / 60);
@@ -77,6 +48,20 @@ const formatTime = (minutes: number): string => {
   if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
   return `${m} min`;
 };
+
+const mapPosteFromDb = (p: any): GameStation => ({
+  id: p.id,
+  name: p.name,
+  type: p.type,
+  characteristics: p.characteristics || '',
+  smartPlugIp: p.smart_plug_ip || '',
+  status: p.status,
+  clientName: p.client_name || undefined,
+  sessionCode: p.session_code || undefined,
+  minutesRemaining: p.minutes_remaining !== null ? p.minutes_remaining : undefined,
+  totalDuration: p.total_duration !== null ? p.total_duration : undefined,
+  updatedAt: p.updated_at
+});
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
 
@@ -113,21 +98,23 @@ const Toast: React.FC<{ message: string; type: 'success' | 'error' }> = ({ messa
   </div>
 );
 
+
 // ─── Écran Login (design system de l'app) ────────────────────────────────────
 
 const LoginScreen: React.FC<{
-  onSubmitCode: (code: string) => { success: boolean; error?: string };
+  onSubmitCode: (code: string) => Promise<{ success: boolean; error?: string }>;
 }> = ({ onSubmitCode }) => {
   const [sessionCode, setSessionCode] = useState('');
   const [error, setError] = useState('');
   const [isShaking, setIsShaking] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   const shake = () => {
     setIsShaking(true);
     setTimeout(() => setIsShaking(false), 500);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     const code = sessionCode.trim().toUpperCase();
@@ -135,10 +122,18 @@ const LoginScreen: React.FC<{
       setError('Le code doit contenir exactement 6 caractères.');
       shake(); return;
     }
-    const res = onSubmitCode(code);
-    if (!res.success) {
-      setError(res.error || 'Code invalide ou déjà utilisé.');
+    setIsLoading(true);
+    try {
+      const res = await onSubmitCode(code);
+      if (!res.success) {
+        setError(res.error || 'Code invalide ou déjà utilisé.');
+        shake();
+      }
+    } catch (err: any) {
+      setError(err.message || 'Une erreur est survenue.');
       shake();
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -242,9 +237,9 @@ const LoginScreen: React.FC<{
             type="submit"
             className="btn btn-black"
             style={{ width: '100%' }}
-            disabled={sessionCode.length < 6}
+            disabled={sessionCode.length < 6 || isLoading}
           >
-            Lancer la session maintenant →
+            {isLoading ? 'Connexion...' : 'Lancer la session maintenant →'}
           </button>
         </form>
       </div>
@@ -266,18 +261,18 @@ const LoginScreen: React.FC<{
 
 const CodeActivationScreen: React.FC<{
   client: MemberClient;
+  postes: GameStation[];
   onActivated: () => void;
   onBack: () => void;
-}> = ({ client, onActivated, onBack }) => {
+}> = ({ client, postes, onActivated, onBack }) => {
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [isShaking, setIsShaking] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    const postes = getPostes();
     const normalized = code.trim().toUpperCase();
 
     // Find a poste 'en-attente' with matching code AND client name
@@ -300,14 +295,22 @@ const CodeActivationScreen: React.FC<{
       return;
     }
 
-    // Activate: set status to 'occupe', remove sessionCode (timer starts)
-    const updatedPostes = postes.map(p => {
-      if (p.id === matchedPoste.id) {
-        return { ...p, status: 'occupe' as const, sessionCode: undefined };
-      }
-      return p;
-    });
-    savePostes(updatedPostes);
+    // Activate in database: set status to 'occupe', remove sessionCode
+    const { error: updateErr } = await supabase
+      .from('postes')
+      .update({
+        status: 'occupe',
+        session_code: null
+      })
+      .eq('id', matchedPoste.id);
+
+    if (updateErr) {
+      setError(updateErr.message);
+      setIsShaking(true);
+      setTimeout(() => setIsShaking(false), 500);
+      return;
+    }
+
     setSuccess(true);
     setTimeout(() => {
       onActivated();
@@ -450,23 +453,17 @@ const CodeActivationScreen: React.FC<{
 
 const PlayerDashboard: React.FC<{
   client: MemberClient;
+  postes: GameStation[];
+  materialTypes: MaterialType[];
   onLogout: () => void;
   onActivateSession: () => void;
-}> = ({ client, onLogout, onActivateSession }) => {
-  const [postes, setPostes] = useState<GameStation[]>(getPostes);
-  const [materialTypes] = useState<MaterialType[]>(getMaterialTypes);
+}> = ({ client, postes, materialTypes, onLogout, onActivateSession }) => {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3500);
   };
-
-  // Refresh postes every 30s
-  useEffect(() => {
-    const interval = setInterval(() => setPostes(getPostes()), 30000);
-    return () => clearInterval(interval);
-  }, []);
 
   const myActivePoste = postes.find(
     p => (p.status === 'occupe' || p.status === 'en-attente') && p.clientName === client.username
@@ -727,40 +724,181 @@ export const JoueurPortal: React.FC = () => {
   });
   const [screen, setScreen] = useState<'dashboard' | 'activate-code' | 'guest-success'>('dashboard');
   const [guestPoste, setGuestPoste] = useState<string>(''); // nom du poste activé pour l'invité
+  const [postes, setPostes] = useState<GameStation[]>([]);
+  const [materialTypes, setMaterialTypes] = useState<MaterialType[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const { data: mtData } = await supabase
+        .from('material_types')
+        .select('*');
+      if (mtData) {
+        setMaterialTypes(mtData.map(r => ({
+          id: r.id,
+          type: r.type,
+          label: r.label,
+          price: r.price,
+          durationMinutes: r.duration_minutes
+        })));
+      }
+
+      const { data: ptData } = await supabase
+        .from('postes')
+        .select('*')
+        .order('name', { ascending: true });
+      if (ptData) {
+        setPostes(ptData.map(mapPosteFromDb));
+      }
+    } catch (e) {
+      console.error("Erreur lors de la récupération des données :", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+
+    // Subscribe to postes changes
+    const channel = supabase
+      .channel('realtime-postes-player')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'postes' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newPost = mapPosteFromDb(payload.new);
+            setPostes(prev => {
+              if (prev.some(p => p.id === newPost.id)) return prev;
+              return [...prev, newPost].sort((a, b) => a.name.localeCompare(b.name));
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = mapPosteFromDb(payload.new);
+            setPostes(prev => prev.map(p => p.id === updated.id ? updated : p));
+          } else if (payload.eventType === 'DELETE') {
+            setPostes(prev => prev.filter(p => p.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // Subscribe to changes of the logged-in client profile
+  useEffect(() => {
+    if (!loggedClient) return;
+
+    const clientChannel = supabase
+      .channel(`realtime-client-portal-${loggedClient.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'clients', filter: `id=eq.${loggedClient.id}` },
+        (payload) => {
+          const updated = payload.new;
+          const mapped: MemberClient = {
+            id: updated.id,
+            username: updated.username,
+            fullName: updated.full_name,
+            phone: updated.phone || '',
+            balance: updated.balance,
+            abonnementType: updated.abonnement_type,
+            abonnementExpiration: updated.abonnement_expiration ? updated.abonnement_expiration.split('T')[0] : null,
+            status: updated.status,
+            abonnementRemainingTime: updated.abonnement_remaining_time
+          };
+          setLoggedClient(mapped);
+          sessionStorage.setItem('playcontrol_logged_client', JSON.stringify(mapped));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(clientChannel);
+    };
+  }, [loggedClient?.id]);
 
   // Soumission d'un code de session depuis l'écran de connexion
-  const handleSubmitCode = (code: string): { success: boolean; error?: string } => {
-    const postes = getPostes();
+  const handleSubmitCode = async (code: string): Promise<{ success: boolean; error?: string }> => {
     const normalized = code.trim().toUpperCase();
-    const poste = postes.find(p => p.status === 'en-attente' && p.sessionCode === normalized);
+    
+    // Rechercher le poste 'en-attente' correspondant en base
+    const { data: posteData, error: posteError } = await supabase
+      .from('postes')
+      .select('*')
+      .eq('session_code', normalized)
+      .eq('status', 'en-attente')
+      .maybeSingle();
 
-    if (!poste) {
+    if (posteError || !posteData) {
       return { success: false, error: 'Code invalide ou déjà utilisé. Vérifiez auprès du caissier.' };
     }
 
+    const poste = mapPosteFromDb(posteData);
+
     // Chercher si le client est un abonné/membre enregistré
-    const clients = getClients();
-    const member = clients.find(c => c.username.toLowerCase() === (poste.clientName || '').toLowerCase());
+    if (poste.clientName && !poste.clientName.startsWith('Invité-')) {
+      const { data: clData, error: clError } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('username', poste.clientName)
+        .maybeSingle();
 
-    if (member && member.status === 'suspended') {
-      return { success: false, error: 'Compte membre suspendu. Contactez le caissier.' };
-    }
+      if (clError || !clData) {
+        return { success: false, error: 'Client introuvable pour cette session.' };
+      }
 
-    // Activer le poste immédiatement
-    const updatedPostes = postes.map(p =>
-      p.id === poste.id
-        ? { ...p, status: 'occupe' as const, sessionCode: undefined }
-        : p
-    );
-    savePostes(updatedPostes);
+      if (clData.status === 'suspended') {
+        return { success: false, error: 'Compte membre suspendu. Contactez le caissier.' };
+      }
 
-    if (member) {
+      // Activer le poste en base
+      const { error: updateError } = await supabase
+        .from('postes')
+        .update({
+          status: 'occupe',
+          session_code: null
+        })
+        .eq('id', poste.id);
+
+      if (updateError) {
+        return { success: false, error: `Erreur d'activation : ${updateError.message}` };
+      }
+
+      const member: MemberClient = {
+        id: clData.id,
+        username: clData.username,
+        fullName: clData.full_name,
+        phone: clData.phone || '',
+        balance: clData.balance,
+        abonnementType: clData.abonnement_type,
+        abonnementExpiration: clData.abonnement_expiration ? clData.abonnement_expiration.split('T')[0] : null,
+        status: clData.status,
+        abonnementRemainingTime: clData.abonnement_remaining_time
+      };
+
       setLoggedClient(member);
       sessionStorage.setItem('playcontrol_logged_client', JSON.stringify(member));
       setScreen('dashboard');
       return { success: true };
     } else {
-      // Joueur invité (temporaire)
+      // Activer le poste invité en base
+      const { error: updateError } = await supabase
+        .from('postes')
+        .update({
+          status: 'occupe',
+          session_code: null
+        })
+        .eq('id', poste.id);
+
+      if (updateError) {
+        return { success: false, error: `Erreur d'activation : ${updateError.message}` };
+      }
+
       setGuestPoste(poste.name);
       setScreen('guest-success');
       return { success: true };
@@ -772,17 +910,41 @@ export const JoueurPortal: React.FC = () => {
     sessionStorage.removeItem('playcontrol_logged_client');
   };
 
-  const handleActivated = () => {
+  const handleActivated = async () => {
     setScreen('dashboard');
     if (loggedClient) {
-      const clients = getClients();
-      const updated = clients.find(c => c.id === loggedClient.id);
-      if (updated) {
+      const { data: clData } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('id', loggedClient.id)
+        .maybeSingle();
+
+      if (clData) {
+        const updated: MemberClient = {
+          id: clData.id,
+          username: clData.username,
+          fullName: clData.full_name,
+          phone: clData.phone || '',
+          balance: clData.balance,
+          abonnementType: clData.abonnement_type,
+          abonnementExpiration: clData.abonnement_expiration ? clData.abonnement_expiration.split('T')[0] : null,
+          status: clData.status,
+          abonnementRemainingTime: clData.abonnement_remaining_time
+        };
         setLoggedClient(updated);
         sessionStorage.setItem('playcontrol_logged_client', JSON.stringify(updated));
       }
     }
   };
+
+  // Écran de chargement initial
+  if (loading && postes.length === 0) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--neutral-50)' }}>
+        <p style={{ color: 'var(--neutral-500)', fontWeight: 600 }}>Chargement du portail...</p>
+      </div>
+    );
+  }
 
   // Écran succès pour invité
   if (screen === 'guest-success') {
@@ -815,6 +977,13 @@ export const JoueurPortal: React.FC = () => {
           }}>
             ✅ Le timer démarre maintenant. Profitez bien !
           </div>
+          <button
+            onClick={() => setScreen('dashboard')}
+            className="btn btn-secondary"
+            style={{ width: '100%', marginTop: 'var(--space-4)' }}
+          >
+            Aller à l'accueil
+          </button>
         </div>
       </div>
     );
@@ -828,6 +997,7 @@ export const JoueurPortal: React.FC = () => {
     return (
       <CodeActivationScreen
         client={loggedClient}
+        postes={postes}
         onActivated={handleActivated}
         onBack={() => setScreen('dashboard')}
       />
@@ -837,6 +1007,8 @@ export const JoueurPortal: React.FC = () => {
   return (
     <PlayerDashboard
       client={loggedClient}
+      postes={postes}
+      materialTypes={materialTypes}
       onLogout={handleLogout}
       onActivateSession={() => setScreen('activate-code')}
     />
