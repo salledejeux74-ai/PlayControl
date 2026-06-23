@@ -39,6 +39,23 @@ export const Licences: React.FC = () => {
     }, 3000);
   };
 
+  const logSystemActivity = async (action: string, severity: 'info' | 'warning' | 'critical', salle: string = 'SuperAdmin System') => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const actorEmail = user?.email || 'Super Admin';
+      await supabase.from('activity_logs').insert({
+        actor: actorEmail,
+        role: 'Super Admin',
+        action,
+        salle,
+        ip: 'Console Web',
+        severity
+      });
+    } catch (err) {
+      console.error("Erreur de logging activité:", err);
+    }
+  };
+
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -141,6 +158,11 @@ export const Licences: React.FC = () => {
         setShowAddModal(false);
         setGeneratedKey('');
         showToastMsg(`La licence pour la salle "${newLicence.salleName}" a été générée et activée.`);
+        logSystemActivity(
+          `Génération de la licence ${newLicence.key} (${validityMonths} mois)`,
+          'info',
+          newLicence.salleName
+        );
       }
     } catch (err: any) {
       showToastMsg("Erreur lors de la création de la licence: " + err.message, "error");
@@ -181,6 +203,11 @@ export const Licences: React.FC = () => {
             return l;
           }));
           showToastMsg(`La licence de la salle "${salleName}" a été prolongée d'un an avec succès.`);
+          logSystemActivity(
+            `Renouvellement de la licence ${lic.key} (prolongée de 12 mois)`,
+            'info',
+            salleName
+          );
         } catch (err: any) {
           showToastMsg("Erreur de renouvellement: " + err.message, "error");
         }

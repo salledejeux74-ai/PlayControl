@@ -111,6 +111,23 @@ export const Salles: React.FC = () => {
     }, 3000);
   };
 
+  const logSystemActivity = async (action: string, severity: 'info' | 'warning' | 'critical', salle: string = 'SuperAdmin System') => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const actorEmail = user?.email || 'Super Admin';
+      await supabase.from('activity_logs').insert({
+        actor: actorEmail,
+        role: 'Super Admin',
+        action,
+        salle,
+        ip: 'Console Web',
+        severity
+      });
+    } catch (err) {
+      console.error("Erreur de logging activité:", err);
+    }
+  };
+
   // Custom confirmation modal
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -149,6 +166,11 @@ export const Salles: React.FC = () => {
           if (error) throw error;
           setSalles(salles.filter(s => s.id !== id));
           showToastMsg(`La salle "${name}" a été supprimée avec succès.`);
+          logSystemActivity(
+            `Suppression de la salle "${name}"`,
+            'critical',
+            name
+          );
         } catch (err: any) {
           showToastMsg("Erreur suppression: " + err.message, "error");
         }
@@ -179,6 +201,11 @@ export const Salles: React.FC = () => {
             return salle;
           }));
           showToastMsg(`La salle "${name}" a été ${isSuspended ? 'suspendue' : 'réactivée'} avec succès.`);
+          logSystemActivity(
+            `${isSuspended ? 'Suspension' : 'Activation'} de la salle "${name}"`,
+            isSuspended ? 'critical' : 'info',
+            name
+          );
         } catch (err: any) {
           showToastMsg("Erreur modification statut: " + err.message, "error");
         }
@@ -396,6 +423,11 @@ export const Salles: React.FC = () => {
         };
         setSalles([...salles, addedSalle]);
         showToastMsg(`La salle "${newSalleName}" a été créée avec succès.`);
+        logSystemActivity(
+          `Création de la salle "${newSalleName}"`,
+          'info',
+          newSalleName
+        );
         
         // Reset Form
         setNewSalleName('');
@@ -519,6 +551,11 @@ export const Salles: React.FC = () => {
       setEditingSalle(null);
       setEditSalleOwnerPhotoFile(null);
       showToastMsg(`La salle "${editSalleName}" a été modifiée avec succès.`);
+      logSystemActivity(
+        `Modification de la salle "${editSalleName}"`,
+        'info',
+        editSalleName
+      );
     } catch (err: any) {
       showToastMsg("Erreur lors de la modification: " + err.message, "error");
     } finally {

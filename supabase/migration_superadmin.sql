@@ -92,5 +92,25 @@ ON storage.objects FOR UPDATE USING (bucket_id = 'salles') WITH CHECK (bucket_id
 CREATE POLICY "Permettre la suppression du bucket salles"
 ON storage.objects FOR DELETE USING (bucket_id = 'salles');
 
+-- 8. Ajout de la colonne temp_password à la table public.profiles et mise à jour du trigger
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS temp_password TEXT;
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email, name, role, salle_id, temp_password)
+  VALUES (
+    new.id,
+    new.email,
+    COALESCE(new.raw_user_meta_data->>'name', 'Utilisateur'),
+    COALESCE(new.raw_user_meta_data->>'role', 'caissier'),
+    new.raw_user_meta_data->>'salle_id',
+    new.raw_user_meta_data->>'temp_password'
+  );
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+
 
 

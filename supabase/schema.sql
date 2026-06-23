@@ -20,6 +20,7 @@ CREATE TABLE public.profiles (
   name TEXT,
   role TEXT NOT NULL CHECK (role IN ('superadmin', 'admin', 'caissier')),
   salle_id TEXT,
+  temp_password TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -27,13 +28,14 @@ CREATE TABLE public.profiles (
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger AS $$
 BEGIN
-  INSERT INTO public.profiles (id, email, name, role, salle_id)
+  INSERT INTO public.profiles (id, email, name, role, salle_id, temp_password)
   VALUES (
     new.id,
     new.email,
     COALESCE(new.raw_user_meta_data->>'name', 'Utilisateur'),
     COALESCE(new.raw_user_meta_data->>'role', 'caissier'),
-    new.raw_user_meta_data->>'salle_id'
+    new.raw_user_meta_data->>'salle_id',
+    new.raw_user_meta_data->>'temp_password'
   );
   RETURN new;
 END;
