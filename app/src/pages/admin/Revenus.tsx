@@ -3,8 +3,28 @@ import { createPortal } from 'react-dom';
 import { Landmark, Search, FileDown, TrendingUp, RefreshCw, Calendar, AlertCircle, User, X } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../hooks/useAuth';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { jsPDF } from 'jspdf';
+import autoTable, { applyPlugin } from 'jspdf-autotable';
+
+// Appliquer le plugin à jsPDF pour l'interopérabilité en mode module (ESM)
+try {
+  applyPlugin(jsPDF);
+} catch (e) {
+  console.warn('Could not apply jspdf-autotable plugin:', e);
+}
+
+const runAutoTable = (pdfDoc: jsPDF, options: any) => {
+  if (typeof (pdfDoc as any).autoTable === 'function') {
+    (pdfDoc as any).autoTable(options);
+  } else if (typeof autoTable === 'function') {
+    autoTable(pdfDoc, options);
+  } else if (autoTable && typeof (autoTable as any).default === 'function') {
+    (autoTable as any).default(pdfDoc, options);
+  } else {
+    throw new Error("Le plugin d'export PDF n'est pas disponible.");
+  }
+};
+
 
 interface Transaction {
   id: string;
@@ -342,7 +362,7 @@ export const AdminRevenus: React.FC = () => {
             doc.text('Récapitulatif par Caissier', margin, y);
             y += 4;
 
-            autoTable(doc, {
+            runAutoTable(doc, {
               startY: y,
               margin: { left: margin, right: margin },
               head: [['Caissier', 'Transactions', 'Sessions', 'Recharges', 'Abonnements', 'Total']],
@@ -373,7 +393,7 @@ export const AdminRevenus: React.FC = () => {
           doc.text('Détail des Transactions', margin, y);
           y += 4;
 
-          autoTable(doc, {
+          runAutoTable(doc, {
             startY: y,
             margin: { left: margin, right: margin },
             head: [['Date & Heure', 'Client', 'Type', 'Montant', 'Paiement', 'Caissier']],

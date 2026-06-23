@@ -14,7 +14,7 @@ interface SalleData {
 }
 
 interface ChangeRequest {
-  status: 'pending' | 'none';
+  status: 'pending' | 'approved' | 'rejected' | 'none';
   name: string;
   location: string;
   phone: string;
@@ -88,7 +88,7 @@ export const AdminSettings: React.FC = () => {
       setLoading(true);
       const { data, error } = await supabase
         .from('salles')
-        .select('id, name, location, phone, owner, status')
+        .select('id, name, location, phone, owner, status, pending_update')
         .eq('id', user.salleId)
         .single();
 
@@ -102,24 +102,12 @@ export const AdminSettings: React.FC = () => {
         const { code, num } = parsePhone(data.phone || '');
         setPhoneCountryCode(code);
         setRawPhoneNum(num);
-      }
 
-      // Check if there's a pending notification for this salle
-      const { data: pendingNotif } = await supabase
-        .from('notifications')
-        .select('id, message, created_at')
-        .eq('salle_id', user.salleId)
-        .eq('recipient_role', 'admin')
-        .ilike('title', '%demande de modification%')
-        .eq('is_read', false)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (pendingNotif) {
-        setChangeRequest({ status: 'pending', name: '', location: '', phone: '', requestedAt: pendingNotif.created_at });
-      } else {
-        setChangeRequest(null);
+        if (data.pending_update) {
+          setChangeRequest(data.pending_update as ChangeRequest);
+        } else {
+          setChangeRequest(null);
+        }
       }
     } catch (err: any) {
       showToastMsg(err.message || 'Erreur lors du chargement.', 'error');
@@ -158,7 +146,28 @@ export const AdminSettings: React.FC = () => {
           const fullPhone = `${phoneCountryCode}${rawPhoneNum}`;
           const requestedAt = new Date().toISOString();
 
-          // Insérer une notification pour l'admin (confirmation d'envoi)
+          const pendingJson = {
+            status: 'pending' as const,
+            name,
+            location,
+            phone: fullPhone,
+            requestedAt
+          };
+
+          if (!user?.salleId) {
+            showToastMsg('Utilisateur non connecté ou sans salle associée.', 'error');
+            return;
+          }
+
+          // 1. Mettre à jour la table salles
+          const { error: updateError } = await supabase
+            .from('salles')
+            .update({ pending_update: pendingJson })
+            .eq('id', user.salleId);
+          
+          if (updateError) throw updateError;
+
+          // 2. Insérer une notification pour l'admin (confirmation d'envoi)
           await supabase.from('notifications').insert({
             salle_id: salleData!.id,
             recipient_role: 'admin',
@@ -167,7 +176,7 @@ export const AdminSettings: React.FC = () => {
             message: `Votre demande de changement du nom en « ${name} » a été transmise au Super Administrateur.`,
           });
 
-          // Insérer une notification pour le superadmin
+          // 3. Insérer une notification pour le superadmin
           await supabase.from('notifications').insert({
             salle_id: salleData!.id,
             recipient_role: 'superadmin',
@@ -176,7 +185,7 @@ export const AdminSettings: React.FC = () => {
             message: `Le gérant demande : Nom « ${name} », Adresse « ${location} », Tél. ${fullPhone}.`,
           });
 
-          setChangeRequest({ status: 'pending', name, location, phone: fullPhone, requestedAt });
+          setChangeRequest(pendingJson);
           showToastMsg('Demande soumise au Super Administrateur.');
         } catch (err: any) {
           showToastMsg(err.message, 'error');
@@ -188,8 +197,14 @@ export const AdminSettings: React.FC = () => {
     );
   };
 
-  const handleClearPendingAlert = () => {
+  const handleClearPendingAlert = async () => {
     setChangeRequest(null);
+    if (user?.salleId) {
+      await supabase
+        .from('salles')
+        .update({ pending_update: null })
+        .eq('id', user.salleId);
+    }
   };
 
   // ── Skeleton ───────────────────────────────────────────────────────────────
@@ -258,20 +273,33 @@ export const AdminSettings: React.FC = () => {
         </div>
       )}
 
-      {/* Pending banners */}
-      {changeRequest?.status === 'pending' && (
+      {/* Pending, approved, or rejected banners */}
+      {changeRequest && (
         <div style={{
-          backgroundColor: '#fffbeb', border: '1px solid #f59e0b',
+          backgroundColor: changeRequest.status === 'pending' ? '#fffbeb' : changeRequest.status === 'approved' ? '#ecfdf5' : '#fef2f2',
+          border: `1px solid ${changeRequest.status === 'pending' ? '#f59e0b' : changeRequest.status === 'approved' ? '#10b981' : '#ef4444'}`,
           borderRadius: 'var(--radius-lg)', padding: 'var(--space-4) var(--space-5)',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#b45309'
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          color: changeRequest.status === 'pending' ? '#b45309' : changeRequest.status === 'approved' ? '#065f46' : '#991b1b'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <Clock size={16} style={{ flexShrink: 0 }} />
             <div>
-              <div style={{ fontWeight: 700, fontSize: 'var(--font-sm)' }}>Demande en attente de validation</div>
-              <p style={{ fontSize: 'var(--font-xs)', color: '#d97706', margin: 0, lineHeight: 1.4 }}>
-                Nom demandé : <strong>« {changeRequest.name} »</strong> — Adresse : <strong>« {changeRequest.location} »</strong>.
-                En attente d'approbation.
+              <div style={{ fontWeight: 700, fontSize: 'var(--font-sm)' }}>
+                {changeRequest.status === 'pending' ? 'Demande en attente de validation' : changeRequest.status === 'approved' ? 'Demande approuvée !' : 'Demande rejetée'}
+              </div>
+              <p style={{
+                fontSize: 'var(--font-xs)',
+                color: changeRequest.status === 'pending' ? '#d97706' : changeRequest.status === 'approved' ? '#047857' : '#b91c1c',
+                margin: 0, lineHeight: 1.4
+              }}>
+                {changeRequest.status === 'pending' ? (
+                  <>Nom demandé : <strong>« {changeRequest.name} »</strong> — Adresse : <strong>« {changeRequest.location} »</strong>.</>
+                ) : changeRequest.status === 'approved' ? (
+                  <>Le Super Administrateur a validé et appliqué vos nouvelles coordonnées.</>
+                ) : (
+                  <>Le Super Administrateur a refusé les modifications demandées.</>
+                )}
               </p>
             </div>
           </div>
