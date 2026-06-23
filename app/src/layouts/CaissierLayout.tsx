@@ -29,6 +29,62 @@ export const CaissierLayout: React.FC = () => {
   const [initialCashInput, setInitialCashInput] = useState<string>('50000');
   const [loadingShift, setLoadingShift] = useState<boolean>(true);
 
+  // License checking states
+  const [checkingLicense, setCheckingLicense] = useState(true);
+  const [isLicenseValid, setIsLicenseValid] = useState(false);
+  const [salleName, setSalleName] = useState('');
+
+  const checkLicense = async () => {
+    if (!user || !user.salleId) {
+      setCheckingLicense(false);
+      return;
+    }
+    try {
+      // 1. Fetch salle details
+      const { data: salleData } = await supabase
+        .from('salles')
+        .select('name')
+        .eq('id', user.salleId)
+        .maybeSingle();
+      if (salleData) {
+        setSalleName(salleData.name);
+      }
+
+      // 2. Fetch latest license
+      const { data: licData } = await supabase
+        .from('licences')
+        .select('*')
+        .eq('salle_id', user.salleId)
+        .order('expires_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (licData) {
+        const expiresAt = new Date(licData.expires_at);
+        const now = new Date();
+        if (expiresAt > now && licData.status !== 'expired') {
+          setIsLicenseValid(true);
+        } else {
+          setIsLicenseValid(false);
+        }
+      } else {
+        setIsLicenseValid(false);
+      }
+    } catch (err) {
+      console.error('Error checking license:', err);
+    } finally {
+      setCheckingLicense(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user && user.role === 'caissier') {
+      checkLicense();
+    } else {
+      setCheckingLicense(false);
+    }
+  }, [user]);
+
   useEffect(() => {
     if (!user) return;
     const checkOpenShift = async () => {
@@ -96,10 +152,112 @@ export const CaissierLayout: React.FC = () => {
     }
   }, [user, navigate]);
 
-  if (!user || user.role !== 'caissier') {
+  const handleForceLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
+  if (!user || user.role !== 'caissier' || checkingLicense) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
-        Chargement...
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ width: '40px', height: '40px', borderRadius: '50%', border: '4px solid var(--primary-100)', borderTopColor: 'var(--primary-500)', animation: 'spin 1s linear infinite' }} />
+        <span style={{ fontSize: 'var(--font-sm)', color: 'var(--neutral-500)', fontWeight: 600 }}>
+          Vérification de la licence de la salle...
+        </span>
+        <style>{`
+          @keyframes spin {
+            to { transform: rotate(360deg); }
+          }
+        `}</style>
+      </div>
+    );
+  }
+
+  if (!isLicenseValid) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        backgroundColor: 'var(--neutral-900)',
+        backgroundImage: 'radial-gradient(circle at top right, var(--primary-900), transparent), radial-gradient(circle at bottom left, var(--accent-900), transparent)',
+        padding: 'var(--space-6)',
+        fontFamily: 'Inter, sans-serif',
+        color: 'var(--neutral-0)'
+      }}>
+        <div style={{
+          maxWidth: '480px',
+          width: '100%',
+          backgroundColor: 'rgba(35, 40, 56, 0.45)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          borderRadius: 'var(--radius-xl)',
+          padding: 'var(--space-8)',
+          boxShadow: 'var(--shadow-2xl)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 'var(--space-6)',
+          textAlign: 'center'
+        }}>
+          <div style={{
+            width: '64px',
+            height: '64px',
+            borderRadius: 'var(--radius-lg)',
+            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--danger-500)',
+            border: '1px solid rgba(239, 68, 68, 0.2)'
+          }}>
+            <ShieldAlert size={36} />
+          </div>
+
+          <div>
+            <h2 style={{ fontSize: 'var(--font-xl)', fontWeight: 800, margin: '0 0 8px 0', letterSpacing: '-0.5px' }}>
+              Accès Caisse Bloqué
+            </h2>
+            <p style={{ color: 'var(--neutral-400)', fontSize: 'var(--font-sm)', margin: '0 0 16px 0', lineHeight: 1.5 }}>
+              La licence logicielle de la salle <strong style={{ color: 'var(--neutral-100)' }}>{salleName || '...'}</strong> est expirée ou inactive.
+            </p>
+            <div style={{
+              backgroundColor: 'rgba(239, 68, 68, 0.05)',
+              border: '1px solid rgba(239, 68, 68, 0.15)',
+              borderRadius: 'var(--radius-md)',
+              padding: '12px',
+              color: 'var(--danger-200)',
+              fontSize: 'var(--font-xs)',
+              textAlign: 'left'
+            }}>
+              Veuillez contacter le gérant de la salle pour qu'il active une nouvelle licence depuis son interface d'administration.
+            </div>
+          </div>
+
+          <div style={{ width: '100%', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: 'var(--space-4)', display: 'flex', justifyContent: 'center' }}>
+            <button
+              onClick={handleForceLogout}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--neutral-400)',
+                fontSize: 'var(--font-xs)',
+                fontWeight: 500,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'color 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.color = 'var(--danger-500)'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--neutral-400)'}
+            >
+              <LogOut size={14} /> Se déconnecter de la session
+            </button>
+          </div>
+        </div>
       </div>
     );
   }

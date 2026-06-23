@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Landmark, Play, Monitor, Users, AlertTriangle, 
   Clock, ShieldAlert, CheckCircle2, UserCheck, LogIn 
 } from 'lucide-react';
+import { useAuth } from '../../hooks/useAuth';
+import { supabase } from '../../lib/supabaseClient';
 
 interface ShiftLog {
   id: string;
@@ -22,17 +24,60 @@ interface LocalAlert {
 }
 
 export const AdminDashboard: React.FC = () => {
+  const { user } = useAuth();
   const [shiftLogs] = useState<ShiftLog[]>([
     { id: '1', cashierName: 'Sophie Caisse', loginTime: '2026-06-15 08:00', logoutTime: null, cashIn: 50000, cashOut: null, status: 'active' },
     { id: '2', cashierName: 'Jean Bernard', loginTime: '2026-06-14 14:00', logoutTime: '2026-06-14 22:30', cashIn: 45000, cashOut: 135000, status: 'completed' },
     { id: '3', cashierName: 'Sophie Caisse', loginTime: '2026-06-14 08:00', logoutTime: '2026-06-14 14:00', cashIn: 30000, cashOut: 98000, status: 'completed' },
   ]);
 
-  const [alerts] = useState<LocalAlert[]>([
+  const [alerts, setAlerts] = useState<LocalAlert[]>([
     { id: '1', severity: 'error', message: 'Le poste Console PS5 #3 est marqué Hors Service (Manette Défectueuse).', time: 'Il y a 10 min' },
-    { id: '2', severity: 'warning', message: 'La licence logicielle locale expire dans 7 jours. Pensez à renouveler.', time: 'Il y a 1 heure' },
     { id: '3', severity: 'info', message: 'Sauvegarde automatique SQLite locale réussie.', time: 'Aujourd\'hui 03:00' },
   ]);
+
+  useEffect(() => {
+    if (!user || !user.salleId) return;
+
+    const checkLicenseExpiration = async () => {
+      try {
+        const { data: licData } = await supabase
+          .from('licences')
+          .select('*')
+          .eq('salle_id', user.salleId)
+          .order('expires_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (licData) {
+          const expiresAt = new Date(licData.expires_at);
+          const now = new Date();
+          const diffTime = expiresAt.getTime() - now.getTime();
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+          if (diffDays > 0 && diffDays <= 7) {
+            setAlerts(prev => {
+              // Avoid duplicates if effect runs twice
+              if (prev.some(a => a.id === 'license-warning')) return prev;
+              return [
+                ...prev,
+                {
+                  id: 'license-warning',
+                  severity: 'warning',
+                  message: `La licence logicielle de votre salle expire le ${licData.expires_at.split('T')[0]} (dans ${diffDays} jour${diffDays > 1 ? 's' : ''}). Pensez à renouveler auprès du Super Administrateur.`,
+                  time: 'Vérifié à l\'instant'
+                }
+              ];
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Error checking license for alerts:', err);
+      }
+    };
+
+    checkLicenseExpiration();
+  }, [user]);
 
   // Hourly occupancy rates for SVG chart
   const occupancyData = [

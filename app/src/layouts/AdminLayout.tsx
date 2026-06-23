@@ -4,9 +4,11 @@ import { useAuth } from '../hooks/useAuth';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { 
   LayoutDashboard, Gamepad2, Users2, UserSquare2,
-  Receipt, Landmark, Settings, LogOut, Bell, Wifi, WifiOff, Menu, X, ChevronLeft, ChevronRight
+  Receipt, Landmark, Settings, LogOut, Bell, Wifi, WifiOff, Menu, X, ChevronLeft, ChevronRight,
+  ShieldAlert, KeyRound
 } from 'lucide-react';
 import logoImg from '../assets/logo.jpeg';
+import { supabase } from '../lib/supabaseClient';
 
 export const AdminLayout: React.FC = () => {
   const { user, logout } = useAuth();
@@ -15,6 +17,16 @@ export const AdminLayout: React.FC = () => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+
+  // License checking states
+  const [checkingLicense, setCheckingLicense] = useState(true);
+  const [isLicenseValid, setIsLicenseValid] = useState(false);
+  const [salleName, setSalleName] = useState('');
+  
+  // Activation form state
+  const [inputKey, setInputKey] = useState('');
+  const [activationError, setActivationError] = useState('');
+  const [activating, setActivating] = useState(false);
 
   // Route protection
   React.useEffect(() => {
@@ -26,10 +38,149 @@ export const AdminLayout: React.FC = () => {
     }
   }, [user, navigate]);
 
-  if (!user || user.role !== 'admin') {
+  const checkLicense = async () => {
+    if (!user || !user.salleId) {
+      setCheckingLicense(false);
+      return;
+    }
+    try {
+      // 1. Fetch salle details
+      const { data: salleData } = await supabase
+        .from('salles')
+        .select('name')
+        .eq('id', user.salleId)
+        .maybeSingle();
+      if (salleData) {
+        setSalleName(salleData.name);
+      }
+
+      // 2. Fetch latest license
+      const { data: licData } = await supabase
+        .from('licences')
+        .select('*')
+        .eq('salle_id', user.salleId)
+        .order('expires_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (licData) {
+        const expiresAt = new Date(licData.expires_at);
+        const now = new Date();
+        if (expiresAt > now && licData.status !== 'expired') {
+          setIsLicenseValid(true);
+        } else {
+          setIsLicenseValid(false);
+        }
+      } else {
+        setIsLicenseValid(false);
+      }
+    } catch (err) {
+      console.error('Error checking license:', err);
+    } finally {
+      setCheckingLicense(false);
+    }
+  };
+
+  React.useEffect(() => {
+    if (user && user.role === 'admin') {
+      checkLicense();
+    } else {
+      setCheckingLicense(false);
+    }
+  }, [user]);
+
+  const handleKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (val.startsWith('PLAY')) {
+      let rest = val.slice(4);
+      let formatted = 'PLAY';
+      if (rest.length > 0) formatted += '-' + rest.slice(0, 4);
+      if (rest.length > 4) formatted += '-' + rest.slice(4, 8);
+      if (rest.length > 8) formatted += '-' + rest.slice(8, 12);
+      val = formatted.slice(0, 19);
+    } else {
+      let parts = [];
+      for (let i = 0; i < val.length; i += 4) {
+        parts.push(val.slice(i, i + 4));
+      }
+      val = parts.join('-').slice(0, 19);
+    }
+    setInputKey(val);
+  };
+
+  const handleActivateLicense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !inputKey.trim()) return;
+    setActivationError('');
+    setActivating(true);
+
+    try {
+      const formattedKey = inputKey.trim().toUpperCase();
+      const { data: licData, error } = await supabase
+        .from('licences')
+        .select('*')
+        .eq('key', formattedKey)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (!licData) {
+        setActivationError('Cette clé de licence est invalide ou introuvable.');
+        setActivating(false);
+        return;
+      }
+
+      if (licData.salle_id !== user.salleId) {
+        setActivationError('Cette clé de licence appartient à une autre salle de jeux.');
+        setActivating(false);
+        return;
+      }
+
+      const expiresAt = new Date(licData.expires_at);
+      const now = new Date();
+      if (expiresAt <= now) {
+        setActivationError('Cette clé de licence est expirée.');
+        setActivating(false);
+        return;
+      }
+
+      // If valid, update in DB
+      const { error: updateError } = await supabase
+        .from('licences')
+        .update({ status: 'active' })
+        .eq('id', licData.id);
+
+      if (updateError) throw updateError;
+
+      // Log system activity
+      await supabase.from('activity_logs').insert({
+        actor: user.name,
+        role: 'Admin Salle',
+        action: `Activation de la licence logicielle ${formattedKey}`,
+        salle: salleName || 'Salle Inconnue',
+        severity: 'info'
+      });
+
+      setIsLicenseValid(true);
+    } catch (err: any) {
+      setActivationError("Erreur d'activation : " + err.message);
+    } finally {
+      setActivating(false);
+    }
+  };
+
+  if (!user || user.role !== 'admin' || checkingLicense) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
-        Chargement...
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ width: '40px', height: '40px', borderRadius: '50%', border: '4px solid var(--primary-100)', borderTopColor: 'var(--primary-500)', animation: 'spin 1s linear infinite' }} />
+        <span style={{ fontSize: 'var(--font-sm)', color: 'var(--neutral-500)', fontWeight: 600 }}>
+          Vérification de la licence logicielle...
+        </span>
+        <style>{`
+          @keyframes spin {
+            to { transform: rotate(360deg); }
+          }
+        `}</style>
       </div>
     );
   }
@@ -38,6 +189,144 @@ export const AdminLayout: React.FC = () => {
     logout();
     navigate('/login');
   };
+
+  if (!isLicenseValid) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        backgroundColor: 'var(--neutral-900)',
+        backgroundImage: 'radial-gradient(circle at top right, var(--primary-900), transparent), radial-gradient(circle at bottom left, var(--accent-900), transparent)',
+        padding: 'var(--space-6)',
+        fontFamily: 'Inter, sans-serif',
+        color: 'var(--neutral-0)'
+      }}>
+        <div style={{
+          maxWidth: '480px',
+          width: '100%',
+          backgroundColor: 'rgba(35, 40, 56, 0.45)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          borderRadius: 'var(--radius-xl)',
+          padding: 'var(--space-8)',
+          boxShadow: 'var(--shadow-2xl)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 'var(--space-6)'
+        }}>
+          <div style={{
+            width: '64px',
+            height: '64px',
+            borderRadius: 'var(--radius-lg)',
+            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--danger-500)',
+            border: '1px solid rgba(239, 68, 68, 0.2)'
+          }}>
+            <ShieldAlert size={36} />
+          </div>
+
+          <div style={{ textAlign: 'center' }}>
+            <h2 style={{ fontSize: 'var(--font-xl)', fontWeight: 800, margin: '0 0 8px 0', letterSpacing: '-0.5px' }}>
+              Licence logicielle expirée ou inactive
+            </h2>
+            <p style={{ color: 'var(--neutral-400)', fontSize: 'var(--font-sm)', margin: 0 }}>
+              L'accès à l'interface de gestion de la salle <strong style={{ color: 'var(--neutral-100)' }}>{salleName || '...'}</strong> est suspendu. Veuillez entrer une clé de licence valide.
+            </p>
+          </div>
+
+          <form onSubmit={handleActivateLicense} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: 'var(--font-xs)', fontWeight: 600, color: 'var(--neutral-400)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Clé de Licence
+              </label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  placeholder="PLAY-XXXX-XXXX-XXXX"
+                  value={inputKey}
+                  onChange={handleKeyChange}
+                  style={{
+                    width: '100%',
+                    padding: '14px 16px',
+                    paddingLeft: '44px',
+                    backgroundColor: 'rgba(20, 23, 34, 0.8)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: 'var(--radius-md)',
+                    color: '#ffffff',
+                    fontSize: 'var(--font-md)',
+                    fontFamily: 'Courier, monospace',
+                    letterSpacing: '1px',
+                    outline: 'none',
+                    transition: 'all 0.2s'
+                  }}
+                  required
+                />
+                <KeyRound size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--neutral-500)' }} />
+              </div>
+              {activationError && (
+                <p style={{ color: 'var(--danger-500)', fontSize: 'var(--font-xs)', margin: '8px 0 0 0', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  ⚠️ {activationError}
+                </p>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              disabled={activating}
+              className="btn"
+              style={{
+                width: '100%',
+                padding: '14px',
+                background: 'var(--gradient-primary)',
+                color: '#ffffff',
+                border: 'none',
+                fontWeight: 600,
+                fontSize: 'var(--font-sm)',
+                borderRadius: 'var(--radius-md)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                boxShadow: '0 4px 12px rgba(10, 66, 158, 0.3)'
+              }}
+            >
+              {activating ? 'Validation...' : 'Activer la Licence'}
+            </button>
+          </form>
+
+          <div style={{ width: '100%', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: 'var(--space-4)', display: 'flex', justifyContent: 'center' }}>
+            <button
+              onClick={handleLogout}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--neutral-400)',
+                fontSize: 'var(--font-xs)',
+                fontWeight: 500,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'color 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.color = 'var(--danger-500)'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--neutral-400)'}
+            >
+              <LogOut size={14} /> Se déconnecter de la session
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const menuItems = [
     { to: '/admin', icon: <LayoutDashboard size={20} />, label: 'Dashboard Salle' },
