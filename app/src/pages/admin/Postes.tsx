@@ -151,6 +151,7 @@ export const AdminPostes: React.FC = () => {
       const { data: mtData, error: mtError } = await supabase
         .from('material_types')
         .select('*')
+        .eq('salle_id', user?.salleId)
         .order('created_at', { ascending: true });
       if (mtError) throw mtError;
       
@@ -170,7 +171,8 @@ export const AdminPostes: React.FC = () => {
       const { data: clData, error: clError } = await supabase
         .from('clients')
         .select('*')
-        .eq('status', 'active');
+        .eq('status', 'active')
+        .eq('salle_id', user?.salleId);
       if (clError) throw clError;
       
       const mappedClients = (clData || []).map(c => ({
@@ -213,15 +215,17 @@ export const AdminPostes: React.FC = () => {
       .channel('realtime-postes-admin')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'postes', filter: `salle_id=eq.${user?.salleId}` },
+        { event: '*', schema: 'public', table: 'postes' },
         (payload) => {
           if (payload.eventType === 'INSERT') {
+            if (payload.new.salle_id !== user?.salleId) return;
             const newPost = mapPosteFromDb(payload.new);
             setPostes(prev => {
               if (prev.some(p => p.id === newPost.id)) return prev;
               return [...prev, newPost].sort((a, b) => a.name.localeCompare(b.name));
             });
           } else if (payload.eventType === 'UPDATE') {
+            if (payload.new.salle_id !== user?.salleId) return;
             const updated = mapPosteFromDb(payload.new);
             setPostes(prev => prev.map(p => p.id === updated.id ? updated : p));
           } else if (payload.eventType === 'DELETE') {
@@ -370,6 +374,8 @@ export const AdminPostes: React.FC = () => {
           return;
         }
 
+        // Instant UI update
+        setPostes(prev => prev.filter(p => p.id !== id));
         showToastMsg(`Le poste "${name}" a été supprimé.`);
       },
       'danger'
@@ -928,25 +934,46 @@ export const AdminPostes: React.FC = () => {
         {/* Bottom Row: Actions */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', borderTop: '1px solid var(--neutral-100)', paddingTop: 'var(--space-3)' }}>
           {isEditMode ? (
-            <button 
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setEditPoste(post);
-              }} 
-              className="btn btn-secondary btn-sm" 
-              style={{ 
-                color: '#b45309', 
-                borderColor: '#fcd34d', 
-                backgroundColor: '#fffbeb', 
-                gap: '4px',
-                width: '100%',
-                justifyContent: 'center'
-              }}
-              title="Modifier la configuration"
-            >
-              <Edit2 size={12} /> Modifier la configuration
-            </button>
+            <>
+              <button 
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditPoste(post);
+                }} 
+                className="btn btn-secondary btn-sm" 
+                style={{ 
+                  color: '#b45309', 
+                  borderColor: '#fcd34d', 
+                  backgroundColor: '#fffbeb', 
+                  gap: '4px',
+                  flex: 1,
+                  justifyContent: 'center'
+                }}
+                title="Modifier la configuration"
+              >
+                <Edit2 size={12} /> Modifier
+              </button>
+              <button 
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeletePoste(post.id, post.name);
+                }} 
+                className="btn btn-secondary btn-sm" 
+                style={{ 
+                  color: 'var(--danger-600)', 
+                  borderColor: 'var(--danger-200)', 
+                  backgroundColor: 'var(--danger-50)', 
+                  gap: '4px',
+                  flex: 1,
+                  justifyContent: 'center'
+                }}
+                title="Supprimer le poste"
+              >
+                <Trash2 size={12} /> Supprimer
+              </button>
+            </>
           ) : (
             <>
               {post.status === 'libre' && (
@@ -1011,23 +1038,13 @@ export const AdminPostes: React.FC = () => {
               )}
 
               {post.status === 'hors-service' && (
-                <>
-                  <button 
-                    onClick={() => handleToggleOutOfService(post.id, post.name, post.status)} 
-                    className="btn btn-secondary btn-sm" 
-                    style={{ color: 'var(--primary-600)', borderColor: 'var(--primary-100)' }}
-                  >
-                    Remettre En Service
-                  </button>
-                  <button 
-                    onClick={() => handleDeletePoste(post.id, post.name)} 
-                    className="btn btn-secondary btn-icon btn-sm" 
-                    style={{ color: 'var(--danger-500)', borderColor: 'var(--danger-100)', width: '30px', height: '30px', padding: 0 }}
-                    title="Supprimer définitivement"
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </>
+                <button 
+                  onClick={() => handleToggleOutOfService(post.id, post.name, post.status)} 
+                  className="btn btn-secondary btn-sm" 
+                  style={{ color: 'var(--primary-600)', borderColor: 'var(--primary-100)', width: '100%', justifyContent: 'center' }}
+                >
+                  Remettre En Service
+                </button>
               )}
             </>
           )}
@@ -1061,7 +1078,7 @@ export const AdminPostes: React.FC = () => {
             }}
           >
             <Edit2 size={18} style={{ color: isEditMode ? '#f59e0b' : 'inherit' }} />
-            {isEditMode ? 'Quitter Édition' : 'Modifier'}
+            {isEditMode ? 'Quitter Édition' : 'Éditer'}
           </button>
           <button className="btn btn-black" onClick={() => { setNewType(defaultTypeKey); setShowAddModal(true); }} style={{ gap: 'var(--space-2)' }}>
             <Plus size={18} /> Ajouter un Poste

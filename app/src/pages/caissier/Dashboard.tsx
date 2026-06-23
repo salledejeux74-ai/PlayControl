@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../hooks/useAuth';
+import { LoadingSkeleton } from '../../components/ui/LoadingSkeleton';
 
 interface GameStation {
   id: string;
@@ -156,7 +157,8 @@ export const CaissierDashboard: React.FC = () => {
       const { data: clData, error: clError } = await supabase
         .from('clients')
         .select('*')
-        .eq('status', 'active');
+        .eq('status', 'active')
+        .eq('salle_id', user?.salleId);
       if (clError) throw clError;
       
       const mapped = (clData || []).map(c => ({
@@ -186,6 +188,7 @@ export const CaissierDashboard: React.FC = () => {
       const { data: mtData, error: mtError } = await supabase
         .from('material_types')
         .select('*')
+        .eq('salle_id', user?.salleId)
         .order('created_at', { ascending: true });
       if (mtError) throw mtError;
       setMaterialTypes((mtData || []).map(r => ({
@@ -223,15 +226,17 @@ export const CaissierDashboard: React.FC = () => {
       .channel('realtime-postes-cashier')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'postes', filter: `salle_id=eq.${user.salleId}` },
+        { event: '*', schema: 'public', table: 'postes' },
         (payload) => {
           if (payload.eventType === 'INSERT') {
+            if (payload.new.salle_id !== user.salleId) return;
             const newPost = mapPosteFromDb(payload.new);
             setPostes(prev => {
               if (prev.some(p => p.id === newPost.id)) return prev;
               return [...prev, newPost].sort((a, b) => a.name.localeCompare(b.name));
             });
           } else if (payload.eventType === 'UPDATE') {
+            if (payload.new.salle_id !== user.salleId) return;
             const updated = mapPosteFromDb(payload.new);
             setPostes(prev => prev.map(p => p.id === updated.id ? updated : p));
           } else if (payload.eventType === 'DELETE') {
@@ -1006,11 +1011,7 @@ export const CaissierDashboard: React.FC = () => {
   };
 
   if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '400px' }}>
-        <p style={{ color: 'var(--neutral-500)', fontWeight: 600 }}>Chargement du tableau de bord depuis Supabase...</p>
-      </div>
-    );
+    return <LoadingSkeleton type="postes" />;
   }
 
   return (

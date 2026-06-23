@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Save, Receipt, Award, Edit2, Plus, Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
+import { useAuth } from '../../hooks/useAuth';
+import { LoadingSkeleton } from '../../components/ui/LoadingSkeleton';
 
 interface HourlyRate {
   id: string;
@@ -30,6 +32,7 @@ const mapNameToType = (name: string): 'Journalier' | 'Hebdomadaire' | 'Mensuel' 
 };
 
 export const AdminTarifs: React.FC = () => {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [rates, setRates] = useState<HourlyRate[]>([]);
   const [packages, setPackages] = useState<AbonnementPackage[]>([]);
@@ -81,22 +84,25 @@ export const AdminTarifs: React.FC = () => {
   };
 
   const fetchTarifsData = async () => {
+    if (!user || !user.salleId) return;
     try {
       setLoading(true);
       // Chargement des tarifs horaires
       const { data: mtData, error: mtError } = await supabase
         .from('material_types')
         .select('*')
+        .eq('salle_id', user.salleId)
         .order('created_at', { ascending: true });
       if (mtError) throw mtError;
-
+ 
       // Chargement des forfaits d'abonnement
       const { data: apData, error: apError } = await supabase
         .from('abonnement_packages')
         .select('*')
+        .eq('salle_id', user.salleId)
         .order('created_at', { ascending: true });
       if (apError) throw apError;
-
+ 
       setRates(
         (mtData || []).map(r => ({
           id: r.id,
@@ -106,7 +112,7 @@ export const AdminTarifs: React.FC = () => {
           durationMinutes: r.duration_minutes,
         }))
       );
-
+ 
       setPackages(
         (apData || []).map(p => ({
           id: p.id,
@@ -114,7 +120,7 @@ export const AdminTarifs: React.FC = () => {
           price: p.price,
           durationHours: p.duration_hours,
           validityDays: p.type === 'Journalier' ? 1 : p.type === 'Hebdomadaire' ? 7 : 30,
-          description: `Pass de type ${p.type} offrant ${p.duration_hours} heures de jeu.`,
+          description: `Pass de type ${p.type} offrant ${p.duration_hours} heures de jeu.`
         }))
       );
     } catch (err: any) {
@@ -123,10 +129,10 @@ export const AdminTarifs: React.FC = () => {
       setLoading(false);
     }
   };
-
+ 
   useEffect(() => {
     fetchTarifsData();
-  }, []);
+  }, [user]);
 
   const handleRatePriceChange = (id: string, newPrice: number) => {
     setRates(rates.map(r => r.id === id ? { ...r, price: newPrice } : r));
@@ -164,6 +170,7 @@ export const AdminTarifs: React.FC = () => {
 
   const handleAddMaterialType = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user || !user.salleId) return;
     if (!newTypeLabel.trim()) return;
 
     const key = newTypeLabel.trim().toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_');
@@ -177,7 +184,8 @@ export const AdminTarifs: React.FC = () => {
       type: key,
       label: newTypeLabel.trim(),
       price: newTypePrice,
-      duration_minutes: totalMinutes > 0 ? totalMinutes : 1
+      duration_minutes: totalMinutes > 0 ? totalMinutes : 1,
+      salle_id: user.salleId
     };
 
     const { error } = await supabase
@@ -223,18 +231,20 @@ export const AdminTarifs: React.FC = () => {
 
   const handleAddPackage = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user || !user.salleId) return;
     if (!newPkgName.trim()) return;
 
     const typeEnum = mapNameToType(newPkgName);
     const newPkg = {
       type: typeEnum,
       price: newPkgPrice,
-      duration_hours: newPkgDuration
+      duration_hours: newPkgDuration,
+      salle_id: user.salleId
     };
 
     const { error } = await supabase
       .from('abonnement_packages')
-      .upsert(newPkg, { onConflict: 'type' });
+      .upsert(newPkg, { onConflict: 'type,salle_id' });
 
     if (error) {
       showToastMsg(error.message, 'error');
@@ -304,11 +314,7 @@ export const AdminTarifs: React.FC = () => {
   };
 
   if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '400px' }}>
-        <p style={{ color: 'var(--neutral-500)', fontWeight: 600 }}>Chargement des tarifs depuis Supabase...</p>
-      </div>
-    );
+    return <LoadingSkeleton type="dashboard" />;
   }
 
   return (

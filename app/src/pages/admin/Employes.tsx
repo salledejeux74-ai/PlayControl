@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Plus, Search, Trash2, KeyRound, UserMinus, UserCheck, ShieldAlert, Edit2, CheckCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../hooks/useAuth';
+import { LoadingSkeleton } from '../../components/ui/LoadingSkeleton';
 
 interface Employee {
   id: string;
@@ -311,19 +312,7 @@ export const AdminEmployes: React.FC = () => {
   );
 
   if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', flexDirection: 'column', gap: '16px' }}>
-        <div style={{ width: '40px', height: '40px', borderRadius: '50%', border: '4px solid var(--primary-100)', borderTopColor: 'var(--primary-500)', animation: 'spin 1s linear infinite' }} />
-        <span style={{ fontSize: 'var(--font-sm)', color: 'var(--neutral-500)', fontWeight: 600 }}>
-          Chargement des comptes employés...
-        </span>
-        <style>{`
-          @keyframes spin {
-            to { transform: rotate(360deg); }
-          }
-        `}</style>
-      </div>
-    );
+    return <LoadingSkeleton type="table" />;
   }
 
   return (

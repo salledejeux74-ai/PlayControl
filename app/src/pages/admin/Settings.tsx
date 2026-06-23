@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Save, ShieldAlert, Landmark } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
+import { LoadingSkeleton } from '../../components/ui/LoadingSkeleton';
 
 interface SalleSettings {
   salleName: string;
@@ -163,11 +164,7 @@ export const AdminSettings: React.FC = () => {
   };
 
   if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '400px' }}>
-        <p style={{ color: 'var(--neutral-500)', fontWeight: 600 }}>Chargement des paramètres depuis Supabase...</p>
-      </div>
-    );
+    return <LoadingSkeleton type="form" />;
   }
 
   return (

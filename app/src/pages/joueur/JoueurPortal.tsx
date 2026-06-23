@@ -15,6 +15,7 @@ interface MemberClient {
   abonnementExpiration: string | null;
   status: 'active' | 'suspended';
   abonnementRemainingTime?: number;
+  salleId?: string;
 }
 
 interface GameStation {
@@ -29,6 +30,7 @@ interface GameStation {
   minutesRemaining?: number;
   totalDuration?: number;
   updatedAt?: string;
+  salleId?: string;
 }
 
 interface MaterialType {
@@ -60,7 +62,8 @@ const mapPosteFromDb = (p: any): GameStation => ({
   sessionCode: p.session_code || undefined,
   minutesRemaining: p.minutes_remaining !== null ? p.minutes_remaining : undefined,
   totalDuration: p.total_duration !== null ? p.total_duration : undefined,
-  updatedAt: p.updated_at
+  updatedAt: p.updated_at,
+  salleId: p.salle_id
 });
 
 
@@ -695,9 +698,20 @@ export const JoueurPortal: React.FC = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const { data: mtData } = await supabase
-        .from('material_types')
-        .select('*');
+      
+      const queryParams = new URLSearchParams(window.location.search);
+      const urlSalleId = queryParams.get('salle_id');
+      if (urlSalleId) {
+        localStorage.setItem('playcontrol_portal_salle_id', urlSalleId);
+      }
+      const portalSalleId = urlSalleId || localStorage.getItem('playcontrol_portal_salle_id') || null;
+
+      let mtQuery = supabase.from('material_types').select('*');
+      if (portalSalleId) {
+        mtQuery = mtQuery.eq('salle_id', portalSalleId);
+      }
+      const { data: mtData } = await mtQuery;
+
       if (mtData) {
         setMaterialTypes(mtData.map(r => ({
           id: r.id,
@@ -708,10 +722,11 @@ export const JoueurPortal: React.FC = () => {
         })));
       }
 
-      const { data: ptData } = await supabase
-        .from('postes')
-        .select('*')
-        .order('name', { ascending: true });
+      let ptQuery = supabase.from('postes').select('*');
+      if (portalSalleId) {
+        ptQuery = ptQuery.eq('salle_id', portalSalleId);
+      }
+      const { data: ptData } = await ptQuery.order('name', { ascending: true });
       if (ptData) {
         setPostes(ptData.map(mapPosteFromDb));
       }
@@ -732,14 +747,18 @@ export const JoueurPortal: React.FC = () => {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'postes' },
         (payload) => {
+          const portalSalleId = new URLSearchParams(window.location.search).get('salle_id') || localStorage.getItem('playcontrol_portal_salle_id');
+          
           if (payload.eventType === 'INSERT') {
             const newPost = mapPosteFromDb(payload.new);
+            if (portalSalleId && newPost.salleId !== portalSalleId) return;
             setPostes(prev => {
               if (prev.some(p => p.id === newPost.id)) return prev;
               return [...prev, newPost].sort((a, b) => a.name.localeCompare(b.name));
             });
           } else if (payload.eventType === 'UPDATE') {
             const updated = mapPosteFromDb(payload.new);
+            if (portalSalleId && updated.salleId !== portalSalleId) return;
             setPostes(prev => prev.map(p => p.id === updated.id ? updated : p));
           } else if (payload.eventType === 'DELETE') {
             setPostes(prev => prev.filter(p => p.id !== payload.old.id));
@@ -773,7 +792,8 @@ export const JoueurPortal: React.FC = () => {
             abonnementType: updated.abonnement_type,
             abonnementExpiration: updated.abonnement_expiration ? updated.abonnement_expiration.split('T')[0] : null,
             status: updated.status,
-            abonnementRemainingTime: updated.abonnement_remaining_time
+            abonnementRemainingTime: updated.abonnement_remaining_time,
+            salleId: updated.salle_id
           };
           setLoggedClient(mapped);
           sessionStorage.setItem('playcontrol_logged_client', JSON.stringify(mapped));
@@ -842,7 +862,8 @@ export const JoueurPortal: React.FC = () => {
         abonnementType: clData.abonnement_type,
         abonnementExpiration: clData.abonnement_expiration ? clData.abonnement_expiration.split('T')[0] : null,
         status: clData.status,
-        abonnementRemainingTime: clData.abonnement_remaining_time
+        abonnementRemainingTime: clData.abonnement_remaining_time,
+        salleId: clData.salle_id
       };
 
       setLoggedClient(member);
@@ -893,7 +914,8 @@ export const JoueurPortal: React.FC = () => {
           abonnementType: clData.abonnement_type,
           abonnementExpiration: clData.abonnement_expiration ? clData.abonnement_expiration.split('T')[0] : null,
           status: clData.status,
-          abonnementRemainingTime: clData.abonnement_remaining_time
+          abonnementRemainingTime: clData.abonnement_remaining_time,
+          salleId: clData.salle_id
         };
         setLoggedClient(updated);
         sessionStorage.setItem('playcontrol_logged_client', JSON.stringify(updated));

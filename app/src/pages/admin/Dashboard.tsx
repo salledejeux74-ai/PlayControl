@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabaseClient';
+import { LoadingSkeleton } from '../../components/ui/LoadingSkeleton';
 
 
 interface LocalAlert {
@@ -126,7 +127,8 @@ export const AdminDashboard: React.FC = () => {
       // 5. Fetch Clients
       const { data: clientsData, error: cErr } = await supabase
         .from('clients')
-        .select('created_at');
+        .select('created_at')
+        .eq('salle_id', user.salleId);
       if (cErr) throw cErr;
 
       const totalClients = clientsData?.length || 0;
@@ -202,8 +204,14 @@ export const AdminDashboard: React.FC = () => {
     // Subscribe to postes changes
     const postesSub = supabase
       .channel('admin-dashboard-postes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'postes', filter: `salle_id=eq.${user.salleId}` }, () => {
-        fetchDashboardData();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'postes' }, (payload) => {
+        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+          if (payload.new.salle_id === user.salleId) {
+            fetchDashboardData();
+          }
+        } else if (payload.eventType === 'DELETE') {
+          fetchDashboardData();
+        }
       })
       .subscribe();
 
@@ -251,19 +259,7 @@ export const AdminDashboard: React.FC = () => {
   }).join(' ');
 
   if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', flexDirection: 'column', gap: '16px' }}>
-        <div style={{ width: '40px', height: '40px', borderRadius: '50%', border: '4px solid var(--primary-100)', borderTopColor: 'var(--primary-500)', animation: 'spin 1s linear infinite' }} />
-        <span style={{ fontSize: 'var(--font-sm)', color: 'var(--neutral-500)', fontWeight: 600 }}>
-          Chargement des données du tableau de bord...
-        </span>
-        <style>{`
-          @keyframes spin {
-            to { transform: rotate(360deg); }
-          }
-        `}</style>
-      </div>
-    );
+    return <LoadingSkeleton type="dashboard" />;
   }
 
   return (

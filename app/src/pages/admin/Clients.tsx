@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Search, Trash2, ShieldAlert, CreditCard, Award, UserMinus, UserCheck, Edit2 } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
+import { useAuth } from '../../hooks/useAuth';
+import { LoadingSkeleton } from '../../components/ui/LoadingSkeleton';
 
 interface MemberClient {
   id: string;
@@ -16,16 +18,19 @@ interface MemberClient {
 }
 
 export const AdminClients: React.FC = () => {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [clients, setClients] = useState<MemberClient[]>([]);
   const [dbPackages, setDbPackages] = useState<any[]>([]);
 
   const fetchClients = async () => {
+    if (!user || !user.salleId) return;
     try {
       setLoading(true);
       const { data, error } = await supabase
         .from('clients')
         .select('*')
+        .eq('salle_id', user.salleId)
         .order('created_at', { ascending: false });
       if (error) throw error;
       setClients(
@@ -49,8 +54,12 @@ export const AdminClients: React.FC = () => {
   };
 
   const fetchPackages = async () => {
+    if (!user || !user.salleId) return;
     try {
-      const { data, error } = await supabase.from('abonnement_packages').select('*');
+      const { data, error } = await supabase
+        .from('abonnement_packages')
+        .select('*')
+        .eq('salle_id', user.salleId);
       if (!error && data) {
         setDbPackages(data);
       }
@@ -60,7 +69,7 @@ export const AdminClients: React.FC = () => {
   useEffect(() => {
     fetchClients();
     fetchPackages();
-  }, []);
+  }, [user]);
 
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -157,12 +166,20 @@ export const AdminClients: React.FC = () => {
     setEditFullName(client.fullName);
     setEditUsername(client.username);
     
-    const phoneParts = client.phone.split(' ');
-    const code = phoneParts[0];
-    const rawNum = phoneParts.slice(1).join('').replace(/\D/g, '');
+    const cleanPhone = client.phone.trim();
+    const matchedCountry = countries.find(c => cleanPhone.startsWith(c.code));
     
-    setEditPhoneCountryCode(code);
-    setEditRawPhoneNum(rawNum);
+    if (matchedCountry) {
+      setEditPhoneCountryCode(matchedCountry.code);
+      const rawNum = cleanPhone.substring(matchedCountry.code.length).replace(/\D/g, '');
+      setEditRawPhoneNum(rawNum);
+    } else {
+      const phoneParts = cleanPhone.split(' ');
+      const code = phoneParts[0];
+      const rawNum = phoneParts.slice(1).join('').replace(/\D/g, '');
+      setEditPhoneCountryCode(code);
+      setEditRawPhoneNum(rawNum);
+    }
   };
 
   const handleSaveEditClient = async (e: React.FormEvent) => {
@@ -240,6 +257,8 @@ export const AdminClients: React.FC = () => {
       return;
     }
 
+    if (!user || !user.salleId) return;
+
     const finalPhone = `${phoneCountryCode} ${rawPhoneNum.trim()}`;
 
     const newClient = {
@@ -249,7 +268,8 @@ export const AdminClients: React.FC = () => {
       balance: 0,
       abonnement_type: 'Aucun',
       abonnement_expiration: null,
-      status: 'active'
+      status: 'active',
+      salle_id: user.salleId
     };
 
     const { error } = await supabase
@@ -398,11 +418,7 @@ export const AdminClients: React.FC = () => {
   );
 
   if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '400px' }}>
-        <p style={{ color: 'var(--neutral-500)', fontWeight: 600 }}>Chargement des clients depuis Supabase...</p>
-      </div>
-    );
+    return <LoadingSkeleton type="table" />;
   }
 
   return (
