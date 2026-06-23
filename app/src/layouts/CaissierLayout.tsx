@@ -296,7 +296,8 @@ export const CaissierLayout: React.FC = () => {
       const { data: activePostes } = await supabase
         .from('postes')
         .select('id')
-        .eq('status', 'occupe');
+        .eq('status', 'occupe')
+        .eq('salle_id', user.salleId);
 
       const activeShift = !!openShift;
       const hasActiveConsole = activePostes && activePostes.length > 0;

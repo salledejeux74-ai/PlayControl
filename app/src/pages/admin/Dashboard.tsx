@@ -113,6 +113,7 @@ export const AdminDashboard: React.FC = () => {
       const { data: postesData, error: pErr } = await supabase
         .from('postes')
         .select('*')
+        .eq('salle_id', user.salleId)
         .order('name', { ascending: true });
       if (pErr) throw pErr;
 
@@ -201,7 +202,7 @@ export const AdminDashboard: React.FC = () => {
     // Subscribe to postes changes
     const postesSub = supabase
       .channel('admin-dashboard-postes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'postes' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'postes', filter: `salle_id=eq.${user.salleId}` }, () => {
         fetchDashboardData();
       })
       .subscribe();

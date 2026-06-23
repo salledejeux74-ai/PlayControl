@@ -245,7 +245,8 @@ export const CaissierEncaissements: React.FC = () => {
       const { data: activePostes, error: ptError } = await supabase
         .from('postes')
         .select('id')
-        .eq('status', 'occupe');
+        .eq('status', 'occupe')
+        .eq('salle_id', user?.salleId);
 
       if (ptError) throw ptError;
 

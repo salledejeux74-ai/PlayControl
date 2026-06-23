@@ -5,6 +5,7 @@ import {
   Trash2, Play, Ban, ArrowRightLeft, Clock, Edit2
 } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
+import { useAuth } from '../../hooks/useAuth';
 
 interface GameStation {
   id: string;
@@ -82,6 +83,7 @@ const generateSessionCode = (): string => {
 };
 
 export const AdminPostes: React.FC = () => {
+  const { user } = useAuth();
   const [postes, setPostes] = useState<GameStation[]>([]);
   const [materialTypes, setMaterialTypes] = useState<MaterialType[]>([]);
   const [dbClients, setDbClients] = useState<MemberClient[]>([]);
@@ -192,6 +194,7 @@ export const AdminPostes: React.FC = () => {
       const { data: ptData, error: ptError } = await supabase
         .from('postes')
         .select('*')
+        .eq('salle_id', user?.salleId)
         .order('name', { ascending: true });
       if (ptError) throw ptError;
       
@@ -202,6 +205,7 @@ export const AdminPostes: React.FC = () => {
   };
 
   useEffect(() => {
+    if (!user) return;
     fetchData();
 
     // Subscribe to postes changes
@@ -209,7 +213,7 @@ export const AdminPostes: React.FC = () => {
       .channel('realtime-postes-admin')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'postes' },
+        { event: '*', schema: 'public', table: 'postes', filter: `salle_id=eq.${user?.salleId}` },
         (payload) => {
           if (payload.eventType === 'INSERT') {
             const newPost = mapPosteFromDb(payload.new);
@@ -230,7 +234,7 @@ export const AdminPostes: React.FC = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [user]);
 
   // Safe Live Timer Effect for database
   useEffect(() => {
@@ -294,7 +298,8 @@ export const AdminPostes: React.FC = () => {
         type: newType,
         characteristics: newCharacteristics || 'Aucune description',
         smart_plug_ip: newSmartPlugIp || '192.168.1.100',
-        status: 'libre'
+        status: 'libre',
+        salle_id: user?.salleId
       });
 
     if (error) {
