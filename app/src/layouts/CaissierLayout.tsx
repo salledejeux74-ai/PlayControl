@@ -9,69 +9,20 @@ import logoImg from '../assets/logo.jpeg';
 import { supabase } from '../lib/supabaseClient';
 
 
+interface AppNotification {
+  id: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+}
 
 export const CaissierLayout: React.FC = () => {
   const { user, logout } = useAuth();
   const isOnline = useOnlineStatus();
   const navigate = useNavigate();
   const [showNotifications, setShowNotifications] = useState(false);
-
-  // ── Notifications dynamiques (caissier) ─────────────────────────────────
-  const [notifications, setNotifications] = useState<{
-    id: string; type: string; title: string; message: string;
-    is_read: boolean; created_at: string;
-  }[]>([]);
-
-  const fetchNotifications = useCallback(async () => {
-    if (!user?.salleId) return;
-    const { data, error } = await supabase
-      .from('notifications')
-      .select('*')
-      .eq('salle_id', user.salleId)
-      .in('recipient_role', ['caissier', 'all'])
-      .order('created_at', { ascending: false })
-      .limit(20);
-    if (error) { console.warn('[Notif caissier]', error.message); return; }
-    if (data) setNotifications(data);
-  }, [user?.salleId]);
-
-  useEffect(() => { fetchNotifications(); }, [fetchNotifications]);
-
-  useEffect(() => {
-    if (!user?.salleId) return;
-    const ch = supabase
-      .channel(`notif-caissier-${user.salleId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (p) => {
-        const n = p.new as any;
-        if (n.salle_id === user.salleId && (n.recipient_role === 'caissier' || n.recipient_role === 'all'))
-          setNotifications(prev => [n, ...prev].slice(0, 20));
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications' }, (p) => {
-        const u2 = p.new as any;
-        setNotifications(prev => prev.map(n => n.id === u2.id ? u2 : n));
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [user?.salleId]);
-
-  const unreadCount = notifications.filter(n => !n.is_read).length;
-
-  const handleMarkAllRead = async () => {
-    if (unreadCount === 0) return;
-    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-    const { error } = await supabase
-      .from('notifications').update({ is_read: true })
-      .eq('salle_id', user!.salleId).in('recipient_role', ['caissier', 'all']).eq('is_read', false);
-    if (error) fetchNotifications();
-  };
-
-  const fmtTime = (iso: string) => {
-    const d = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-    if (d < 60) return 'À l\'instant';
-    if (d < 3600) return `Il y a ${Math.floor(d / 60)} min`;
-    if (d < 86400) return `Il y a ${Math.floor(d / 3600)}h`;
-    return new Date(iso).toLocaleDateString('fr-FR');
-  };
   const [restrictionModal, setRestrictionModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -85,6 +36,64 @@ export const CaissierLayout: React.FC = () => {
   const [isShiftActive, setIsShiftActive] = useState<boolean>(false);
   const [initialCashInput, setInitialCashInput] = useState<string>('50000');
   const [loadingShift, setLoadingShift] = useState<boolean>(true);
+
+  // ── Notifications dynamiques ──────────────────────────────────────────────
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+
+  const fetchNotifications = useCallback(async () => {
+    if (!user?.salleId) return;
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('salle_id', user.salleId)
+      .in('recipient_role', ['caissier', 'all'])
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (error) { console.warn('[Notifications Caissier]', error.message); return; }
+    if (data) setNotifications(data as AppNotification[]);
+  }, [user?.salleId]);
+
+  useEffect(() => { fetchNotifications(); }, [fetchNotifications]);
+
+  useEffect(() => {
+    if (!user?.salleId) return;
+    const ch = supabase
+      .channel(`notif-caissier-${user.salleId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (payload) => {
+        const n = payload.new as AppNotification & { salle_id?: string; recipient_role?: string };
+        if (n.salle_id === user.salleId && (n.recipient_role === 'caissier' || n.recipient_role === 'all')) {
+          setNotifications(prev => [n, ...prev].slice(0, 20));
+        }
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications' }, (payload) => {
+        const updated = payload.new as AppNotification;
+        setNotifications(prev => prev.map(n => n.id === updated.id ? updated : n));
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [user?.salleId]);
+
+  const unreadCount = notifications.filter(n => !n.is_read).length;
+
+  const handleMarkAllRead = async () => {
+    if (!user?.salleId || unreadCount === 0) return;
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    const { error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('salle_id', user.salleId)
+      .in('recipient_role', ['caissier', 'all'])
+      .eq('is_read', false);
+    if (error) { console.warn('[Notif mark-read]', error.message); fetchNotifications(); }
+  };
+
+  const formatNotifTime = (iso: string) => {
+    const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+    if (diff < 60) return 'À l\'instant';
+    if (diff < 3600) return `Il y a ${Math.floor(diff / 60)} min`;
+    if (diff < 86400) return `Il y a ${Math.floor(diff / 3600)}h`;
+    return new Date(iso).toLocaleDateString('fr-FR');
+  };
 
   // License checking states
   const [checkingLicense, setCheckingLicense] = useState(true);
@@ -388,7 +397,10 @@ export const CaissierLayout: React.FC = () => {
     { to: '/caissier/encaissements', icon: <Wallet size={18} />, label: 'Caisse & Paiements' },
   ];
 
-  // notifications are now dynamic (see state above)
+  const mockNotifications = [
+    { id: 1, text: "La session de Gamer_99 sur le Poste 3 se termine dans 5 min !", time: "À l'instant", type: "urgent" },
+    { id: 2, text: "Abonnement expiré pour le client Jean_Dupont.", time: "Il y a 10 min", type: "warning" },
+  ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: 'var(--neutral-50)' }}>
@@ -475,9 +487,9 @@ export const CaissierLayout: React.FC = () => {
 
           {/* Notifications Bell */}
           <div style={{ position: 'relative' }}>
-            <button
+            <button 
               onClick={() => setShowNotifications(!showNotifications)}
-              className="btn btn-secondary btn-icon"
+              className="btn btn-secondary btn-icon" 
               style={{ borderRadius: 'var(--radius-full)' }}
             >
               <Bell size={18} />
@@ -485,8 +497,9 @@ export const CaissierLayout: React.FC = () => {
                 <span style={{
                   position: 'absolute', top: '-2px', right: '-2px',
                   backgroundColor: 'var(--danger-500)', color: 'var(--neutral-0)',
-                  fontSize: '9px', fontWeight: 700, width: '16px', height: '16px',
-                  borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '9px', fontWeight: 700,
+                  width: '16px', height: '16px', borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
                   boxShadow: '0 0 0 2px var(--neutral-0)'
                 }}>
                   {unreadCount > 9 ? '9+' : unreadCount}
@@ -496,17 +509,17 @@ export const CaissierLayout: React.FC = () => {
 
             {showNotifications && (
               <div style={{
-                position: 'absolute', right: 0, top: '46px', width: '320px',
+                position: 'absolute', right: 0, top: '46px', width: '330px',
                 backgroundColor: 'var(--neutral-0)', borderRadius: 'var(--radius-lg)',
                 boxShadow: 'var(--shadow-lg)', border: '1px solid var(--neutral-200)',
                 zIndex: 20, overflow: 'hidden',
               }} className="animate-fade-in">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-3) var(--space-4)', borderBottom: '1px solid var(--neutral-100)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontWeight: 700, fontSize: 'var(--font-sm)' }}>Alertes caisse</span>
+                    <span style={{ fontWeight: 700, fontSize: 'var(--font-sm)' }}>Notifications</span>
                     {unreadCount > 0 && (
                       <span style={{ fontSize: '10px', fontWeight: 700, backgroundColor: 'var(--danger-500)', color: '#fff', borderRadius: '20px', padding: '1px 7px' }}>
-                        {unreadCount}
+                        {unreadCount} non lue{unreadCount > 1 ? 's' : ''}
                       </span>
                     )}
                   </div>
@@ -517,19 +530,19 @@ export const CaissierLayout: React.FC = () => {
                     </button>
                   )}
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '300px', overflowY: 'auto' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '340px', overflowY: 'auto' }}>
                   {notifications.length === 0 ? (
-                    <div style={{ padding: 'var(--space-5)', textAlign: 'center', color: 'var(--neutral-400)', fontSize: 'var(--font-xs)', fontWeight: 500 }}>
-                      Aucune alerte pour le moment
+                    <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--neutral-400)', fontSize: 'var(--font-xs)', fontWeight: 500 }}>
+                      Aucune notification
                     </div>
                   ) : notifications.map(n => {
-                    const bc = n.type === 'error' ? 'var(--danger-500)' : n.type === 'success' ? 'var(--success-500)' : n.type === 'warning' ? '#f59e0b' : 'var(--primary-400)';
-                    const bg = n.is_read ? 'var(--neutral-0)' : n.type === 'error' ? 'var(--danger-50)' : n.type === 'warning' ? '#fffbeb' : 'var(--primary-50)';
+                    const borderColor = n.type === 'error' ? 'var(--danger-500)' : n.type === 'success' ? 'var(--success-500)' : n.type === 'warning' ? '#f59e0b' : 'var(--primary-400)';
+                    const bgColor = n.is_read ? 'var(--neutral-0)' : n.type === 'error' ? 'var(--danger-50)' : n.type === 'success' ? '#f0fdf4' : n.type === 'warning' ? '#fffbeb' : 'var(--primary-50)';
                     return (
-                      <div key={n.id} style={{ padding: 'var(--space-3) var(--space-4)', backgroundColor: bg, borderLeft: `3px solid ${bc}`, borderBottom: '1px solid var(--neutral-100)' }}>
+                      <div key={n.id} style={{ padding: 'var(--space-3) var(--space-4)', backgroundColor: bgColor, borderLeft: `3px solid ${borderColor}`, borderBottom: '1px solid var(--neutral-100)' }}>
                         <p style={{ color: 'var(--neutral-800)', fontWeight: n.is_read ? 500 : 700, marginBottom: '2px', fontSize: 'var(--font-xs)', lineHeight: 1.4 }}>{n.title}</p>
-                        <p style={{ color: 'var(--neutral-500)', fontSize: '11px', marginBottom: '3px' }}>{n.message}</p>
-                        <span style={{ color: 'var(--neutral-400)', fontSize: '10px', fontWeight: 500 }}>{fmtTime(n.created_at)}</span>
+                        <p style={{ color: 'var(--neutral-500)', fontSize: '11px', marginBottom: '3px', lineHeight: 1.3 }}>{n.message}</p>
+                        <span style={{ color: 'var(--neutral-400)', fontSize: '10px', fontWeight: 500 }}>{formatNotifTime(n.created_at)}</span>
                       </div>
                     );
                   })}

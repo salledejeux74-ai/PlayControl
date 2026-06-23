@@ -13,6 +13,7 @@ import logoImg from '../assets/logo.jpeg';
 interface AppNotification {
   id: string;
   salle_id: string | null;
+  recipient_role: string;
   type: 'info' | 'success' | 'warning' | 'error';
   title: string;
   message: string;
