@@ -180,69 +180,91 @@ export const CaissierLayout: React.FC = () => {
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: '100vh',
-        backgroundColor: 'var(--neutral-900)',
-        backgroundImage: 'radial-gradient(circle at top right, var(--primary-900), transparent), radial-gradient(circle at bottom left, var(--accent-900), transparent)',
+        backgroundColor: 'var(--neutral-50)',
         padding: 'var(--space-6)',
-        fontFamily: 'Inter, sans-serif',
-        color: 'var(--neutral-0)'
+        position: 'relative',
+        overflow: 'hidden',
+        fontFamily: 'Inter, sans-serif'
       }}>
+        {/* Background blobs for premium depth */}
         <div style={{
-          maxWidth: '480px',
+          position: 'absolute',
+          width: '500px',
+          height: '500px',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(26,109,224,0.06) 0%, rgba(124,58,237,0.02) 100%)',
+          top: '-100px',
+          left: '-100px',
+          zIndex: 0
+        }} />
+        <div style={{
+          position: 'absolute',
+          width: '600px',
+          height: '600px',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(124,58,237,0.06) 0%, rgba(26,109,224,0.02) 100%)',
+          bottom: '-150px',
+          right: '-150px',
+          zIndex: 0
+        }} />
+
+        <div className="card animate-fade-in" style={{
+          maxWidth: '440px',
           width: '100%',
-          backgroundColor: 'rgba(35, 40, 56, 0.45)',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
+          backgroundColor: 'var(--neutral-0)',
+          border: '1px solid var(--neutral-100)',
           borderRadius: 'var(--radius-xl)',
-          padding: 'var(--space-8)',
-          boxShadow: 'var(--shadow-2xl)',
+          padding: 'var(--space-10)',
+          boxShadow: 'var(--shadow-xl)',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           gap: 'var(--space-6)',
-          textAlign: 'center'
+          textAlign: 'center',
+          zIndex: 1
         }}>
           <div style={{
             width: '64px',
             height: '64px',
             borderRadius: 'var(--radius-lg)',
-            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+            backgroundColor: 'var(--danger-50)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             color: 'var(--danger-500)',
-            border: '1px solid rgba(239, 68, 68, 0.2)'
+            border: '1px solid var(--danger-100)'
           }}>
             <ShieldAlert size={36} />
           </div>
 
           <div>
-            <h2 style={{ fontSize: 'var(--font-xl)', fontWeight: 800, margin: '0 0 8px 0', letterSpacing: '-0.5px' }}>
+            <h2 style={{ fontSize: 'var(--font-lg)', fontWeight: 800, color: 'var(--neutral-800)', margin: '0 0 8px 0', letterSpacing: '-0.5px' }}>
               Accès Caisse Bloqué
             </h2>
-            <p style={{ color: 'var(--neutral-400)', fontSize: 'var(--font-sm)', margin: '0 0 16px 0', lineHeight: 1.5 }}>
-              La licence logicielle de la salle <strong style={{ color: 'var(--neutral-100)' }}>{salleName || '...'}</strong> est expirée ou inactive.
+            <p style={{ color: 'var(--neutral-500)', fontSize: 'var(--font-sm)', margin: '0 0 16px 0', lineHeight: 1.5 }}>
+              La licence logicielle de la salle <strong style={{ color: 'var(--neutral-800)' }}>{salleName || '...'}</strong> est expirée ou inactive.
             </p>
             <div style={{
-              backgroundColor: 'rgba(239, 68, 68, 0.05)',
-              border: '1px solid rgba(239, 68, 68, 0.15)',
+              backgroundColor: 'var(--danger-50)',
+              border: '1px solid var(--danger-100)',
               borderRadius: 'var(--radius-md)',
               padding: '12px',
-              color: 'var(--danger-200)',
+              color: 'var(--danger-700)',
               fontSize: 'var(--font-xs)',
-              textAlign: 'left'
+              textAlign: 'left',
+              lineHeight: 1.4
             }}>
               Veuillez contacter le gérant de la salle pour qu'il active une nouvelle licence depuis son interface d'administration.
             </div>
           </div>
 
-          <div style={{ width: '100%', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: 'var(--space-4)', display: 'flex', justifyContent: 'center' }}>
+          <div style={{ width: '100%', borderTop: '1px solid var(--neutral-100)', paddingTop: 'var(--space-4)', display: 'flex', justifyContent: 'center' }}>
             <button
               onClick={handleForceLogout}
               style={{
                 background: 'none',
                 border: 'none',
-                color: 'var(--neutral-400)',
+                color: 'var(--neutral-500)',
                 fontSize: 'var(--font-xs)',
                 fontWeight: 500,
                 cursor: 'pointer',
@@ -252,7 +274,7 @@ export const CaissierLayout: React.FC = () => {
                 transition: 'color 0.2s'
               }}
               onMouseEnter={(e) => e.currentTarget.style.color = 'var(--danger-500)'}
-              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--neutral-400)'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--neutral-500)'}
             >
               <LogOut size={14} /> Se déconnecter de la session
             </button>

@@ -197,53 +197,74 @@ export const AdminLayout: React.FC = () => {
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: '100vh',
-        backgroundColor: 'var(--neutral-900)',
-        backgroundImage: 'radial-gradient(circle at top right, var(--primary-900), transparent), radial-gradient(circle at bottom left, var(--accent-900), transparent)',
+        backgroundColor: 'var(--neutral-50)',
         padding: 'var(--space-6)',
-        fontFamily: 'Inter, sans-serif',
-        color: 'var(--neutral-0)'
+        position: 'relative',
+        overflow: 'hidden',
+        fontFamily: 'Inter, sans-serif'
       }}>
+        {/* Background blobs for premium depth */}
         <div style={{
-          maxWidth: '480px',
+          position: 'absolute',
+          width: '500px',
+          height: '500px',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(26,109,224,0.06) 0%, rgba(124,58,237,0.02) 100%)',
+          top: '-100px',
+          left: '-100px',
+          zIndex: 0
+        }} />
+        <div style={{
+          position: 'absolute',
+          width: '600px',
+          height: '600px',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(124,58,237,0.06) 0%, rgba(26,109,224,0.02) 100%)',
+          bottom: '-150px',
+          right: '-150px',
+          zIndex: 0
+        }} />
+
+        <div className="card animate-fade-in" style={{
+          maxWidth: '440px',
           width: '100%',
-          backgroundColor: 'rgba(35, 40, 56, 0.45)',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
+          backgroundColor: 'var(--neutral-0)',
+          border: '1px solid var(--neutral-100)',
           borderRadius: 'var(--radius-xl)',
-          padding: 'var(--space-8)',
-          boxShadow: 'var(--shadow-2xl)',
+          padding: 'var(--space-10)',
+          boxShadow: 'var(--shadow-xl)',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          gap: 'var(--space-6)'
+          gap: 'var(--space-6)',
+          zIndex: 1
         }}>
           <div style={{
             width: '64px',
             height: '64px',
             borderRadius: 'var(--radius-lg)',
-            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+            backgroundColor: 'var(--danger-50)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             color: 'var(--danger-500)',
-            border: '1px solid rgba(239, 68, 68, 0.2)'
+            border: '1px solid var(--danger-100)'
           }}>
             <ShieldAlert size={36} />
           </div>
 
           <div style={{ textAlign: 'center' }}>
-            <h2 style={{ fontSize: 'var(--font-xl)', fontWeight: 800, margin: '0 0 8px 0', letterSpacing: '-0.5px' }}>
-              Licence logicielle expirée ou inactive
+            <h2 style={{ fontSize: 'var(--font-lg)', fontWeight: 800, color: 'var(--neutral-800)', margin: '0 0 8px 0', letterSpacing: '-0.5px' }}>
+              Licence expirée ou inactive
             </h2>
-            <p style={{ color: 'var(--neutral-400)', fontSize: 'var(--font-sm)', margin: 0 }}>
-              L'accès à l'interface de gestion de la salle <strong style={{ color: 'var(--neutral-100)' }}>{salleName || '...'}</strong> est suspendu. Veuillez entrer une clé de licence valide.
+            <p style={{ color: 'var(--neutral-500)', fontSize: 'var(--font-sm)', margin: 0, lineHeight: '1.5' }}>
+              L'accès à l'interface de gestion de la salle <strong style={{ color: 'var(--neutral-800)' }}>{salleName || '...'}</strong> est suspendu. Veuillez entrer une clé de licence valide.
             </p>
           </div>
 
           <form onSubmit={handleActivateLicense} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
             <div>
-              <label style={{ display: 'block', fontSize: 'var(--font-xs)', fontWeight: 600, color: 'var(--neutral-400)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              <label style={{ display: 'block', fontSize: 'var(--font-xs)', fontWeight: 600, color: 'var(--neutral-600)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                 Clé de Licence
               </label>
               <div style={{ position: 'relative' }}>
@@ -254,13 +275,13 @@ export const AdminLayout: React.FC = () => {
                   onChange={handleKeyChange}
                   style={{
                     width: '100%',
-                    padding: '14px 16px',
+                    padding: '12px 16px',
                     paddingLeft: '44px',
-                    backgroundColor: 'rgba(20, 23, 34, 0.8)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    backgroundColor: 'var(--neutral-0)',
+                    border: '1px solid var(--neutral-200)',
                     borderRadius: 'var(--radius-md)',
-                    color: '#ffffff',
-                    fontSize: 'var(--font-md)',
+                    color: 'var(--neutral-800)',
+                    fontSize: 'var(--font-sm)',
                     fontFamily: 'Courier, monospace',
                     letterSpacing: '1px',
                     outline: 'none',
@@ -268,7 +289,7 @@ export const AdminLayout: React.FC = () => {
                   }}
                   required
                 />
-                <KeyRound size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--neutral-500)' }} />
+                <KeyRound size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--neutral-400)' }} />
               </div>
               {activationError && (
                 <p style={{ color: 'var(--danger-500)', fontSize: 'var(--font-xs)', margin: '8px 0 0 0', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -280,13 +301,11 @@ export const AdminLayout: React.FC = () => {
             <button
               type="submit"
               disabled={activating}
-              className="btn"
+              className="btn btn-primary"
               style={{
                 width: '100%',
-                padding: '14px',
-                background: 'var(--gradient-primary)',
+                padding: '12px',
                 color: '#ffffff',
-                border: 'none',
                 fontWeight: 600,
                 fontSize: 'var(--font-sm)',
                 borderRadius: 'var(--radius-md)',
@@ -294,21 +313,20 @@ export const AdminLayout: React.FC = () => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '8px',
-                boxShadow: '0 4px 12px rgba(10, 66, 158, 0.3)'
+                gap: '8px'
               }}
             >
               {activating ? 'Validation...' : 'Activer la Licence'}
             </button>
           </form>
 
-          <div style={{ width: '100%', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: 'var(--space-4)', display: 'flex', justifyContent: 'center' }}>
+          <div style={{ width: '100%', borderTop: '1px solid var(--neutral-100)', paddingTop: 'var(--space-4)', display: 'flex', justifyContent: 'center' }}>
             <button
               onClick={handleLogout}
               style={{
                 background: 'none',
                 border: 'none',
-                color: 'var(--neutral-400)',
+                color: 'var(--neutral-500)',
                 fontSize: 'var(--font-xs)',
                 fontWeight: 500,
                 cursor: 'pointer',
@@ -318,7 +336,7 @@ export const AdminLayout: React.FC = () => {
                 transition: 'color 0.2s'
               }}
               onMouseEnter={(e) => e.currentTarget.style.color = 'var(--danger-500)'}
-              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--neutral-400)'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--neutral-500)'}
             >
               <LogOut size={14} /> Se déconnecter de la session
             </button>
