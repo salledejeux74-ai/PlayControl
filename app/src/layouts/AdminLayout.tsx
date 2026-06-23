@@ -301,7 +301,7 @@ export const AdminLayout: React.FC = () => {
             <button
               type="submit"
               disabled={activating}
-              className="btn btn-primary"
+              className="btn btn-black"
               style={{
                 width: '100%',
                 padding: '12px',
