@@ -89,6 +89,27 @@ export const CaissierDashboard: React.FC = () => {
   const [memberClients, setMemberClients] = useState<MemberClient[]>([]);
   const [loading, setLoading] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState<'espèces' | 'mobile_money'>('espèces');
+  const [salleName, setSalleName] = useState('Zone Gaming Center');
+
+  useEffect(() => {
+    const fetchSalleName = async () => {
+      if (user && user.salleId) {
+        try {
+          const { data } = await supabase
+            .from('salles')
+            .select('name')
+            .eq('id', user.salleId)
+            .maybeSingle();
+          if (data) {
+            setSalleName(data.name);
+          }
+        } catch (err) {
+          console.error('Error fetching salle name:', err);
+        }
+      }
+    };
+    fetchSalleName();
+  }, [user]);
 
   // Filters
   const [filterType, setFilterType] = useState<string>('all');
@@ -1000,7 +1021,7 @@ export const CaissierDashboard: React.FC = () => {
             Terminal Caisse – Gestion des Sessions
           </h2>
           <p style={{ color: 'var(--neutral-50)', fontSize: 'var(--font-sm)', background: 'var(--gradient-primary)', padding: 'var(--space-2) var(--space-4)', borderRadius: 'var(--radius-md)', display: 'inline-block' }}>
-            Zone Gaming Center — Session active
+            {salleName} — Session active
           </p>
         </div>
       </div>

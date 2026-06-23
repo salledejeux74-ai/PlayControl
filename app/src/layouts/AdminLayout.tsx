@@ -507,7 +507,7 @@ export const AdminLayout: React.FC = () => {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
             <span style={{ fontSize: 'var(--font-sm)', fontWeight: 700, color: 'var(--neutral-700)' }}>
-              Salle : <span style={{ color: 'var(--primary-500)' }}>Zone Gaming Center</span>
+              Salle : <span style={{ color: 'var(--primary-500)' }}>{salleName || 'Zone Gaming Center'}</span>
             </span>
           </div>
 
