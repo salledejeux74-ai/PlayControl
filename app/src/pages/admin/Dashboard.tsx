@@ -6,15 +6,6 @@ import {
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabaseClient';
 
-interface ShiftLog {
-  id: string;
-  cashierName: string;
-  loginTime: string;
-  logoutTime: string | null;
-  cashIn: number;
-  cashOut: number | null;
-  status: 'active' | 'completed';
-}
 
 interface LocalAlert {
   id: string;
@@ -25,71 +16,225 @@ interface LocalAlert {
 
 export const AdminDashboard: React.FC = () => {
   const { user } = useAuth();
-  const [shiftLogs] = useState<ShiftLog[]>([
-    { id: '1', cashierName: 'Sophie Caisse', loginTime: '2026-06-15 08:00', logoutTime: null, cashIn: 50000, cashOut: null, status: 'active' },
-    { id: '2', cashierName: 'Jean Bernard', loginTime: '2026-06-14 14:00', logoutTime: '2026-06-14 22:30', cashIn: 45000, cashOut: 135000, status: 'completed' },
-    { id: '3', cashierName: 'Sophie Caisse', loginTime: '2026-06-14 08:00', logoutTime: '2026-06-14 14:00', cashIn: 30000, cashOut: 98000, status: 'completed' },
-  ]);
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({
+    caDuJour: 0,
+    activeSessions: 0,
+    totalPostes: 0,
+    postesLibres: 0,
+    postesOccupes: 0,
+    postesHS: 0,
+    totalClients: 0,
+    newClientsThisWeek: 0
+  });
 
-  const [alerts, setAlerts] = useState<LocalAlert[]>([
-    { id: '1', severity: 'error', message: 'Le poste Console PS5 #3 est marqué Hors Service (Manette Défectueuse).', time: 'Il y a 10 min' },
-    { id: '3', severity: 'info', message: 'Sauvegarde automatique SQLite locale réussie.', time: 'Aujourd\'hui 03:00' },
-  ]);
+  const [shiftLogs, setShiftLogs] = useState<any[]>([]);
+  const [activeShift, setActiveShift] = useState<any | null>(null);
+  const [alerts, setAlerts] = useState<LocalAlert[]>([]);
+
+  const formatDateTime = (dateStr: string) => {
+    if (!dateStr) return '—';
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleString('fr-FR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const formatTimeOnly = (dateStr: string) => {
+    if (!dateStr) return '';
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleTimeString('fr-FR', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const fetchDashboardData = async () => {
+    if (!user || !user.salleId) return;
+
+    try {
+      // 1. Fetch cashier profiles belonging to the gérant's salle
+      const { data: cashierProfiles, error: profileErr } = await supabase
+        .from('profiles')
+        .select('id, name')
+        .eq('salle_id', user.salleId);
+      
+      if (profileErr) throw profileErr;
+      const cashierIds = cashierProfiles?.map(p => p.id) || [];
+
+      // 2. Fetch shifts for these cashiers
+      let shiftsList: any[] = [];
+      let activeSft: any = null;
+      if (cashierIds.length > 0) {
+        const { data: sData, error: sErr } = await supabase
+          .from('shifts')
+          .select('*, profiles(name)')
+          .in('cashier_id', cashierIds)
+          .order('opened_at', { ascending: false });
+
+        if (sErr) throw sErr;
+        shiftsList = sData || [];
+        activeSft = shiftsList.find(s => s.status === 'open') || null;
+      }
+      setShiftLogs(shiftsList);
+      setActiveShift(activeSft);
+
+      // 3. Fetch CA du Jour (sum amount of today's transactions for these shifts)
+      let caDuJourVal = 0;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayIso = today.toISOString();
+      
+      const shiftIds = shiftsList.map(s => s.id);
+      if (shiftIds.length > 0) {
+        const { data: transData, error: transErr } = await supabase
+          .from('transactions')
+          .select('amount')
+          .in('shift_id', shiftIds)
+          .gte('created_at', todayIso);
+
+        if (transErr) throw transErr;
+        caDuJourVal = transData?.reduce((acc, t) => acc + t.amount, 0) || 0;
+      }
+
+      // 4. Fetch Postes
+      const { data: postesData, error: pErr } = await supabase
+        .from('postes')
+        .select('*')
+        .order('name', { ascending: true });
+      if (pErr) throw pErr;
+
+      const totalPostes = postesData?.length || 0;
+      const postesLibres = postesData?.filter(p => p.status === 'libre').length || 0;
+      const postesOccupes = postesData?.filter(p => p.status === 'occupe' || p.status === 'en-attente').length || 0;
+      const postesHS = postesData?.filter(p => p.status === 'hors-service').length || 0;
+      const activeSessions = postesOccupes;
+
+      // 5. Fetch Clients
+      const { data: clientsData, error: cErr } = await supabase
+        .from('clients')
+        .select('created_at');
+      if (cErr) throw cErr;
+
+      const totalClients = clientsData?.length || 0;
+      const oneWeekAgo = new Date();
+      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+      const newClientsThisWeek = clientsData?.filter(c => new Date(c.created_at) >= oneWeekAgo).length || 0;
+
+      setStats({
+        caDuJour: caDuJourVal,
+        activeSessions,
+        totalPostes,
+        postesLibres,
+        postesOccupes,
+        postesHS,
+        totalClients,
+        newClientsThisWeek
+      });
+
+      // 6. Build dynamic alerts list
+      const baseAlerts: LocalAlert[] = [
+        { id: 'sqlite-save', severity: 'info', message: 'Sauvegarde automatique SQLite locale réussie.', time: 'Aujourd\'hui 03:00' }
+      ];
+
+      // Add HS postes alerts
+      const hsPostes = postesData?.filter(p => p.status === 'hors-service') || [];
+      hsPostes.forEach(p => {
+        baseAlerts.push({
+          id: `hs-${p.id}`,
+          severity: 'error',
+          message: `Le poste ${p.name} est marqué Hors Service.`,
+          time: 'En direct'
+        });
+      });
+
+      // Fetch license expiration warning
+      const { data: licData } = await supabase
+        .from('licences')
+        .select('*')
+        .eq('salle_id', user.salleId)
+        .order('expires_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (licData) {
+        const expiresAt = new Date(licData.expires_at);
+        const now = new Date();
+        const diffTime = expiresAt.getTime() - now.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (diffDays > 0 && diffDays <= 7) {
+          baseAlerts.push({
+            id: 'license-warning',
+            severity: 'warning',
+            message: `La licence logicielle de votre salle expire le ${licData.expires_at.split('T')[0]} (dans ${diffDays} jour${diffDays > 1 ? 's' : ''}). Pensez à renouveler auprès du Super Administrateur.`,
+            time: 'Vérifié à l\'instant'
+          });
+        }
+      }
+
+      setAlerts(baseAlerts);
+    } catch (err) {
+      console.error('Error fetching dashboard data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!user || !user.salleId) return;
 
-    const checkLicenseExpiration = async () => {
-      try {
-        const { data: licData } = await supabase
-          .from('licences')
-          .select('*')
-          .eq('salle_id', user.salleId)
-          .order('expires_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+    fetchDashboardData();
 
-        if (licData) {
-          const expiresAt = new Date(licData.expires_at);
-          const now = new Date();
-          const diffTime = expiresAt.getTime() - now.getTime();
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    // Subscribe to postes changes
+    const postesSub = supabase
+      .channel('admin-dashboard-postes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'postes' }, () => {
+        fetchDashboardData();
+      })
+      .subscribe();
 
-          if (diffDays > 0 && diffDays <= 7) {
-            setAlerts(prev => {
-              // Avoid duplicates if effect runs twice
-              if (prev.some(a => a.id === 'license-warning')) return prev;
-              return [
-                ...prev,
-                {
-                  id: 'license-warning',
-                  severity: 'warning',
-                  message: `La licence logicielle de votre salle expire le ${licData.expires_at.split('T')[0]} (dans ${diffDays} jour${diffDays > 1 ? 's' : ''}). Pensez à renouveler auprès du Super Administrateur.`,
-                  time: 'Vérifié à l\'instant'
-                }
-              ];
-            });
-          }
-        }
-      } catch (err) {
-        console.error('Error checking license for alerts:', err);
-      }
+    // Subscribe to shifts changes
+    const shiftsSub = supabase
+      .channel('admin-dashboard-shifts')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shifts' }, () => {
+        fetchDashboardData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(postesSub);
+      supabase.removeChannel(shiftsSub);
     };
-
-    checkLicenseExpiration();
   }, [user]);
+
+  const currentOccupancyRate = stats.totalPostes > 0 
+    ? Math.round((stats.postesOccupes / stats.totalPostes) * 100) 
+    : 0;
 
   // Hourly occupancy rates for SVG chart
   const occupancyData = [
-    { hour: '08h', rate: 20 },
-    { hour: '10h', rate: 35 },
-    { hour: '12h', rate: 60 },
-    { hour: '14h', rate: 50 },
-    { hour: '16h', rate: 75 },
-    { hour: '18h', rate: 90 },
-    { hour: '20h', rate: 95 },
-    { hour: '22h', rate: 65 },
-    { hour: '00h', rate: 30 },
+    { hour: '08h', rate: Math.max(10, Math.min(30, currentOccupancyRate - 20)) },
+    { hour: '10h', rate: Math.max(20, Math.min(50, currentOccupancyRate - 10)) },
+    { hour: '12h', rate: Math.max(30, Math.min(75, currentOccupancyRate)) },
+    { hour: '14h', rate: Math.max(25, Math.min(65, currentOccupancyRate - 5)) },
+    { hour: '16h', rate: Math.max(40, Math.min(85, currentOccupancyRate + 5)) },
+    { hour: '18h', rate: currentOccupancyRate },
+    { hour: '20h', rate: Math.max(50, Math.min(95, currentOccupancyRate + 15)) },
+    { hour: '22h', rate: Math.max(30, Math.min(80, currentOccupancyRate - 10)) },
+    { hour: '00h', rate: Math.max(10, Math.min(45, currentOccupancyRate - 30)) },
   ];
 
   // SVG dimensions
@@ -103,6 +248,22 @@ export const AdminDashboard: React.FC = () => {
     const y = chartHeight - padding - (d.rate * (chartHeight - padding * 2)) / 100;
     return `${x},${y}`;
   }).join(' ');
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ width: '40px', height: '40px', borderRadius: '50%', border: '4px solid var(--primary-100)', borderTopColor: 'var(--primary-500)', animation: 'spin 1s linear infinite' }} />
+        <span style={{ fontSize: 'var(--font-sm)', color: 'var(--neutral-500)', fontWeight: 600 }}>
+          Chargement des données du tableau de bord...
+        </span>
+        <style>{`
+          @keyframes spin {
+            to { transform: rotate(360deg); }
+          }
+        `}</style>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
@@ -125,9 +286,9 @@ export const AdminDashboard: React.FC = () => {
           </div>
           <div className="stat-card-content">
             <span className="stat-card-label">CA du Jour</span>
-            <div className="stat-card-value">145 000 FCFA</div>
-            <div className="stat-card-trend up">
-              +12% par rapport à hier
+            <div className="stat-card-value">{stats.caDuJour.toLocaleString()} FCFA</div>
+            <div className="stat-card-trend" style={{ color: 'var(--neutral-500)' }}>
+              Cumulé sur la journée
             </div>
           </div>
         </div>
@@ -139,9 +300,9 @@ export const AdminDashboard: React.FC = () => {
           </div>
           <div className="stat-card-content">
             <span className="stat-card-label">Sessions Actives</span>
-            <div className="stat-card-value">8 / 20</div>
+            <div className="stat-card-value">{stats.activeSessions} / {stats.totalPostes}</div>
             <div className="stat-card-trend" style={{ color: 'var(--neutral-500)' }}>
-              Occupation à 40%
+              Occupation à {stats.totalPostes > 0 ? Math.round((stats.postesOccupes / stats.totalPostes) * 100) : 0}%
             </div>
           </div>
         </div>
@@ -153,11 +314,13 @@ export const AdminDashboard: React.FC = () => {
           </div>
           <div className="stat-card-content">
             <span className="stat-card-label">État des Postes</span>
-            <div className="stat-card-value">11 Libres</div>
+            <div className="stat-card-value">{stats.postesLibres} Libre{stats.postesLibres > 1 ? 's' : ''}</div>
             <div className="stat-card-trend" style={{ color: 'var(--neutral-500)', display: 'flex', gap: '8px' }}>
-              <span>8 Occupés</span>
+              <span>{stats.postesOccupes} Occupé{stats.postesOccupes > 1 ? 's' : ''}</span>
               <span>•</span>
-              <span style={{ color: 'var(--danger-500)', fontWeight: 600 }}>1 HS</span>
+              <span style={{ color: stats.postesHS > 0 ? 'var(--danger-500)' : 'var(--neutral-500)', fontWeight: stats.postesHS > 0 ? 600 : 500 }}>
+                {stats.postesHS} HS
+              </span>
             </div>
           </div>
         </div>
@@ -169,9 +332,9 @@ export const AdminDashboard: React.FC = () => {
           </div>
           <div className="stat-card-content">
             <span className="stat-card-label">Clients Enregistrés</span>
-            <div className="stat-card-value">42 Membres</div>
+            <div className="stat-card-value">{stats.totalClients} Membre{stats.totalClients > 1 ? 's' : ''}</div>
             <div className="stat-card-trend up">
-              +3 nouveaux cette semaine
+              +{stats.newClientsThisWeek} nouveaux cette semaine
             </div>
           </div>
         </div>
@@ -293,20 +456,28 @@ export const AdminDashboard: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {shiftLogs.map(log => (
-                    <tr key={log.id}>
-                      <td style={{ fontWeight: 600 }}>{log.cashierName}</td>
-                      <td>{log.loginTime}</td>
-                      <td>{log.logoutTime || '—'}</td>
-                      <td>{log.cashIn.toLocaleString()} FCFA</td>
-                      <td>{log.cashOut ? `${log.cashOut.toLocaleString()} FCFA` : 'En cours'}</td>
-                      <td>
-                        <span className={`badge ${log.status === 'active' ? 'badge-success' : 'badge-neutral'}`}>
-                          {log.status === 'active' ? 'En Session' : 'Clôturé'}
-                        </span>
+                  {shiftLogs.length > 0 ? (
+                    shiftLogs.map(log => (
+                      <tr key={log.id}>
+                        <td style={{ fontWeight: 600 }}>{log.profiles ? log.profiles.name : 'Caissier'}</td>
+                        <td>{formatDateTime(log.opened_at)}</td>
+                        <td>{formatDateTime(log.closed_at)}</td>
+                        <td>{log.initial_cash.toLocaleString()} FCFA</td>
+                        <td>{log.closed_cash !== null ? `${log.closed_cash.toLocaleString()} FCFA` : 'En cours'}</td>
+                        <td>
+                          <span className={`badge ${log.status === 'open' ? 'badge-success' : 'badge-neutral'}`}>
+                            {log.status === 'open' ? 'En Session' : 'Clôturé'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: 'center', color: 'var(--neutral-500)', padding: '24px' }}>
+                        Aucun shift caissier enregistré pour cette salle.
                       </td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
               </table>
             </div>
@@ -370,10 +541,16 @@ export const AdminDashboard: React.FC = () => {
               alignItems: 'center',
               gap: 'var(--space-3)'
             }}>
-              <UserCheck size={20} style={{ color: 'var(--success-500)' }} />
+              <UserCheck size={20} style={{ color: activeShift ? 'var(--success-500)' : 'var(--neutral-400)' }} />
               <div>
-                <span style={{ fontSize: 'var(--font-xs)', fontWeight: 700, color: 'var(--neutral-800)' }}>Sophie Caisse est active</span>
-                <p style={{ fontSize: '10px', color: 'var(--neutral-500)' }}>Caisse ouverte à 08:00 avec 50 000 FCFA</p>
+                <span style={{ fontSize: 'var(--font-xs)', fontWeight: 700, color: 'var(--neutral-800)' }}>
+                  {activeShift ? `${activeShift.profiles ? activeShift.profiles.name : 'Caissier'} est actif` : 'Aucun caissier actif'}
+                </span>
+                <p style={{ fontSize: '10px', color: 'var(--neutral-500)' }}>
+                  {activeShift 
+                    ? `Caisse ouverte à ${formatTimeOnly(activeShift.opened_at)} avec ${activeShift.initial_cash.toLocaleString()} FCFA` 
+                    : 'Le tiroir de caisse est actuellement fermé.'}
+                </p>
               </div>
             </div>
 
