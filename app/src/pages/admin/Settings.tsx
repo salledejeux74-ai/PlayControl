@@ -1,109 +1,65 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Save, ShieldAlert, Landmark } from 'lucide-react';
+import { Save, ShieldAlert, Landmark, User, MapPin, Phone, RefreshCw, Clock } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
-import { LoadingSkeleton } from '../../components/ui/LoadingSkeleton';
+import { useAuth } from '../../hooks/useAuth';
 
-interface SalleSettings {
-  salleName: string;
-  salleAddress: string;
-  phoneCountryCode: string;
-  rawPhoneNum: string;
+interface SalleData {
+  id: string;
+  name: string;
+  location: string;
+  phone: string;
+  owner: string;
+  status: string;
 }
 
-interface PendingSettingsUpdate extends SalleSettings {
-  status: 'pending' | 'approved' | 'rejected';
+interface ChangeRequest {
+  status: 'pending' | 'none';
+  name: string;
+  location: string;
+  phone: string;
   requestedAt: string;
 }
 
 export const AdminSettings: React.FC = () => {
+  const { user } = useAuth();
+
   const [loading, setLoading] = useState(true);
-  const [settingsId, setSettingsId] = useState<string | null>(null);
-  const [salleName, setSalleName] = useState('');
-  const [salleAddress, setSalleAddress] = useState('');
+  const [salleData, setSalleData] = useState<SalleData | null>(null);
+
+  // Form fields
+  const [name, setName] = useState('');
+  const [location, setLocation] = useState('');
   const [phoneCountryCode, setPhoneCountryCode] = useState('+237');
   const [rawPhoneNum, setRawPhoneNum] = useState('');
 
-  const [pendingUpdate, setPendingUpdate] = useState<PendingSettingsUpdate | null>(null);
+  // Track if a pending request was already submitted this session
+  const [changeRequest, setChangeRequest] = useState<ChangeRequest | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const fetchSettings = async () => {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('settings')
-        .select('*')
-        .eq('is_active', true)
-        .limit(1)
-        .single();
-
-      if (error) throw error;
-
-      if (data) {
-        setSettingsId(data.id);
-        setSalleName(data.salle_name);
-        setSalleAddress(data.salle_address);
-        setPhoneCountryCode(data.phone_country_code);
-        setRawPhoneNum(data.raw_phone_num);
-        if (data.pending_update) {
-          setPendingUpdate(data.pending_update as PendingSettingsUpdate);
-        } else {
-          setPendingUpdate(null);
-        }
-      }
-    } catch (err: any) {
-      showToastMsg(err.message, 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchSettings();
-  }, []);
-
-  const handleClearPendingAlert = async () => {
-    if (!settingsId) return;
-    const { error } = await supabase
-      .from('settings')
-      .update({
-        pending_update: null
-      })
-      .eq('id', settingsId);
-
-    if (error) {
-      showToastMsg(error.message, 'error');
-      return;
-    }
-
-    setPendingUpdate(null);
-  };
-
-  // Country selection for validation
+  // ── Country config ─────────────────────────────────────────────────────────
   const countries = [
-    { code: '+237', flag: '🇨🇲', name: 'Cameroun', length: 9, placeholder: '699 99 99 99' },
-    { code: '+241', flag: '🇬🇦', name: 'Gabon', length: 9, placeholder: '66 12 34 56' },
-    { code: '+242', flag: '🇨🇬', name: 'Congo', length: 9, placeholder: '06 123 45 67' },
-    { code: '+243', flag: '🇨🇩', name: 'RDC', length: 9, placeholder: '81 234 56 78' },
-    { code: '+236', flag: '🇨🇫', name: 'RCA', length: 8, placeholder: '75 12 34 56' },
-    { code: '+235', flag: '🇹🇩', name: 'Tchad', length: 8, placeholder: '66 12 34 56' },
-    { code: '+225', flag: '🇨🇮', name: 'Côte d\'Ivoire', length: 10, placeholder: '07 12 34 56 78' },
-    { code: '+221', flag: '🇸🇳', name: 'Sénégal', length: 9, placeholder: '77 123 45 67' },
-    { code: '+234', flag: '🇳🇬', name: 'Nigeria', length: 10, placeholder: '80 31 23 45 67' },
-    { code: '+33',  flag: '🇫🇷', name: 'France', length: 9, placeholder: '6 12 34 56 78' },
+    { code: '+237', flag: '🇨🇲', name: 'Cameroun',       length: 9,  placeholder: '699 99 99 99' },
+    { code: '+241', flag: '🇬🇦', name: 'Gabon',           length: 9,  placeholder: '66 12 34 56' },
+    { code: '+242', flag: '🇨🇬', name: 'Congo',           length: 9,  placeholder: '06 123 45 67' },
+    { code: '+243', flag: '🇨🇩', name: 'RDC',             length: 9,  placeholder: '81 234 56 78' },
+    { code: '+236', flag: '🇨🇫', name: 'RCA',             length: 8,  placeholder: '75 12 34 56' },
+    { code: '+235', flag: '🇹🇩', name: 'Tchad',           length: 8,  placeholder: '66 12 34 56' },
+    { code: '+225', flag: '🇨🇮', name: "Côte d'Ivoire",   length: 10, placeholder: '07 12 34 56 78' },
+    { code: '+221', flag: '🇸🇳', name: 'Sénégal',         length: 9,  placeholder: '77 123 45 67' },
+    { code: '+234', flag: '🇳🇬', name: 'Nigeria',         length: 10, placeholder: '80 31 23 45 67' },
+    { code: '+33',  flag: '🇫🇷', name: 'France',          length: 9,  placeholder: '6 12 34 56 78' },
   ];
-
   const activeCountry = countries.find(c => c.code === phoneCountryCode) || countries[0];
 
-  // Toast notifications
+  // ── Toast ──────────────────────────────────────────────────────────────────
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const showToastMsg = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
-    setTimeout(() => {
-      setToast(null);
-    }, 3000);
+    setTimeout(() => setToast(null), 3500);
   };
 
-  // Custom confirmation modal
+  // ── Confirm modal ──────────────────────────────────────────────────────────
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -111,11 +67,72 @@ export const AdminSettings: React.FC = () => {
     onConfirm: () => void;
     type: 'danger' | 'warning' | 'info';
   } | null>(null);
-
   const openConfirm = (title: string, message: string, onConfirm: () => void, type: 'danger' | 'warning' | 'info' = 'warning') => {
     setConfirmModal({ isOpen: true, title, message, onConfirm, type });
   };
 
+  // ── Parse phone stored as "+237699999999" → code + num ─────────────────────
+  const parsePhone = (fullPhone: string) => {
+    if (!fullPhone) return { code: '+237', num: '' };
+    const match = countries.find(c => fullPhone.startsWith(c.code));
+    if (match) {
+      return { code: match.code, num: fullPhone.slice(match.code.length) };
+    }
+    return { code: '+237', num: fullPhone };
+  };
+
+  // ── Fetch salle data ──────────────────────────────────────────────────────
+  const fetchSalle = async () => {
+    if (!user?.salleId) return;
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('salles')
+        .select('id, name, location, phone, owner, status')
+        .eq('id', user.salleId)
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
+        setSalleData(data as SalleData);
+        setName(data.name || '');
+        setLocation(data.location || '');
+
+        const { code, num } = parsePhone(data.phone || '');
+        setPhoneCountryCode(code);
+        setRawPhoneNum(num);
+      }
+
+      // Check if there's a pending notification for this salle
+      const { data: pendingNotif } = await supabase
+        .from('notifications')
+        .select('id, message, created_at')
+        .eq('salle_id', user.salleId)
+        .eq('recipient_role', 'admin')
+        .ilike('title', '%demande de modification%')
+        .eq('is_read', false)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (pendingNotif) {
+        setChangeRequest({ status: 'pending', name: '', location: '', phone: '', requestedAt: pendingNotif.created_at });
+      } else {
+        setChangeRequest(null);
+      }
+    } catch (err: any) {
+      showToastMsg(err.message || 'Erreur lors du chargement.', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSalle();
+  }, [user?.salleId]);
+
+  // ── Handle phone input ─────────────────────────────────────────────────────
   const handlePhoneInputChange = (val: string) => {
     const numbersOnly = val.replace(/\D/g, '');
     if (numbersOnly.length <= activeCountry.length) {
@@ -123,53 +140,82 @@ export const AdminSettings: React.FC = () => {
     }
   };
 
+  // ── Submit change request ────────────────────────────────────────────────
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
 
     if (rawPhoneNum.length !== activeCountry.length) {
-      showToastMsg(`Le numéro de téléphone pour le ${activeCountry.name} doit contenir exactement ${activeCountry.length} chiffres.`, 'error');
+      showToastMsg(`Le numéro pour le ${activeCountry.name} doit contenir exactement ${activeCountry.length} chiffres.`, 'error');
       return;
     }
 
     openConfirm(
-      "Soumettre les modifications",
-      "Les modifications apportées au profil de la salle doivent être validées par le Super Administrateur. Soumettre la demande ?",
+      'Soumettre les modifications',
+      'Les modifications du profil de la salle seront envoyées au Super Administrateur pour validation.',
       async () => {
-        const updateRequest: PendingSettingsUpdate = {
-          status: 'pending',
-          salleName,
-          salleAddress,
-          phoneCountryCode,
-          rawPhoneNum,
-          requestedAt: new Date().toISOString()
-        };
+        setSubmitting(true);
+        try {
+          const fullPhone = `${phoneCountryCode}${rawPhoneNum}`;
+          const requestedAt = new Date().toISOString();
 
-        const { error } = await supabase
-          .from('settings')
-          .update({
-            pending_update: updateRequest
-          })
-          .eq('id', settingsId);
+          // Insérer une notification pour l'admin (confirmation d'envoi)
+          await supabase.from('notifications').insert({
+            salle_id: salleData!.id,
+            recipient_role: 'admin',
+            type: 'info',
+            title: 'Demande de modification soumise',
+            message: `Votre demande de changement du nom en « ${name} » a été transmise au Super Administrateur.`,
+          });
 
-        if (error) {
-          showToastMsg(error.message, 'error');
-          return;
+          // Insérer une notification pour le superadmin
+          await supabase.from('notifications').insert({
+            salle_id: salleData!.id,
+            recipient_role: 'superadmin',
+            type: 'warning',
+            title: `Demande de modification — ${salleData!.name}`,
+            message: `Le gérant demande : Nom « ${name} », Adresse « ${location} », Tél. ${fullPhone}.`,
+          });
+
+          setChangeRequest({ status: 'pending', name, location, phone: fullPhone, requestedAt });
+          showToastMsg('Demande soumise au Super Administrateur.');
+        } catch (err: any) {
+          showToastMsg(err.message, 'error');
+        } finally {
+          setSubmitting(false);
         }
-
-        setPendingUpdate(updateRequest);
-        showToastMsg("Demande de modification soumise au Super Administrateur.");
       },
       'info'
     );
   };
 
+  const handleClearPendingAlert = () => {
+    setChangeRequest(null);
+  };
+
+  // ── Skeleton ───────────────────────────────────────────────────────────────
   if (loading) {
-    return <LoadingSkeleton type="form" />;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', maxWidth: '650px', margin: '0 auto', width: '100%' }}>
+        <div>
+          <div className="skeleton" style={{ width: '220px', height: '28px', borderRadius: 'var(--radius-md)', marginBottom: '8px' }} />
+          <div className="skeleton" style={{ width: '340px', height: '16px', borderRadius: 'var(--radius-sm)' }} />
+        </div>
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          {[1, 2, 3, 4].map(i => (
+            <div key={i}>
+              <div className="skeleton" style={{ width: '120px', height: '13px', borderRadius: 'var(--radius-sm)', marginBottom: '6px' }} />
+              <div className="skeleton" style={{ width: '100%', height: '40px', borderRadius: 'var(--radius-md)' }} />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', maxWidth: '650px', margin: '0 auto', width: '100%' }}>
-      
+
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
@@ -177,164 +223,139 @@ export const AdminSettings: React.FC = () => {
             Paramètres de la Salle
           </h2>
           <p style={{ color: 'var(--neutral-500)', fontSize: 'var(--font-sm)' }}>
-            Configurez les coordonnées de la salle (soumis à validation du Super Administrateur).
+            Coordonnées actuelles de votre salle — les modifications sont soumises au Super Administrateur.
           </p>
         </div>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={fetchSalle}
+          style={{ gap: 'var(--space-2)' }}
+        >
+          <RefreshCw size={15} /> Actualiser
+        </button>
       </div>
 
-      {pendingUpdate && pendingUpdate.status === 'pending' && (
-        <div style={{
-          backgroundColor: '#fffbeb',
-          border: '1px solid #f59e0b',
-          borderRadius: 'var(--radius-lg)',
-          padding: 'var(--space-4) var(--space-5)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '4px',
-          color: '#b45309'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: 'var(--font-sm)' }}>
-            <span style={{ display: 'inline-block', width: '8px', height: '8px', backgroundColor: '#f59e0b', borderRadius: '50%' }}></span>
-            Demande de modification en attente de validation
+      {/* Info card — données actuelles en lecture seule */}
+      {salleData && (
+        <div className="card" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', backgroundColor: 'var(--neutral-25, #fafafa)', border: '1px solid var(--neutral-150, #f0f0f0)' }}>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--neutral-400)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Nom actuel</div>
+            <div style={{ fontWeight: 700, color: 'var(--neutral-800)', fontSize: 'var(--font-sm)' }}>{salleData.name}</div>
           </div>
-          <p style={{ fontSize: 'var(--font-xs)', color: '#d97706', margin: 0, lineHeight: 1.4 }}>
-            Vous avez soumis des modifications (Nom : "{pendingUpdate.salleName}", Adresse : "{pendingUpdate.salleAddress}"). Elles seront actives dès qu'elles auront été approuvées par le Super Administrateur.
-          </p>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--neutral-400)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Propriétaire</div>
+            <div style={{ fontWeight: 700, color: 'var(--neutral-800)', fontSize: 'var(--font-sm)' }}>{salleData.owner}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--neutral-400)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Adresse actuelle</div>
+            <div style={{ fontWeight: 600, color: 'var(--neutral-600)', fontSize: 'var(--font-sm)' }}>{salleData.location}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--neutral-400)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Téléphone actuel</div>
+            <div style={{ fontWeight: 600, color: 'var(--neutral-600)', fontSize: 'var(--font-sm)' }}>{salleData.phone || '—'}</div>
+          </div>
         </div>
       )}
 
-      {pendingUpdate && pendingUpdate.status === 'rejected' && (
+      {/* Pending banners */}
+      {changeRequest?.status === 'pending' && (
         <div style={{
-          backgroundColor: '#fef2f2',
-          border: '1px solid #ef4444',
-          borderRadius: 'var(--radius-lg)',
-          padding: 'var(--space-4) var(--space-5)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          color: '#b91c1c'
+          backgroundColor: '#fffbeb', border: '1px solid #f59e0b',
+          borderRadius: 'var(--radius-lg)', padding: 'var(--space-4) var(--space-5)',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#b45309'
         }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: 'var(--font-sm)' }}>
-              <span style={{ display: 'inline-block', width: '8px', height: '8px', backgroundColor: '#ef4444', borderRadius: '50%' }}></span>
-              Demande de modification refusée
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Clock size={16} style={{ flexShrink: 0 }} />
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 'var(--font-sm)' }}>Demande en attente de validation</div>
+              <p style={{ fontSize: 'var(--font-xs)', color: '#d97706', margin: 0, lineHeight: 1.4 }}>
+                Nom demandé : <strong>« {changeRequest.name} »</strong> — Adresse : <strong>« {changeRequest.location} »</strong>.
+                En attente d'approbation.
+              </p>
             </div>
-            <p style={{ fontSize: 'var(--font-xs)', color: '#dc2626', margin: 0 }}>
-              Votre dernière demande de modification de profil a été rejetée par le Super Administrateur.
-            </p>
           </div>
-          <button 
-            type="button" 
-            className="btn btn-secondary btn-sm" 
-            onClick={handleClearPendingAlert}
-            style={{ padding: '4px 10px', fontSize: 'var(--font-xs)', color: '#dc2626', borderColor: '#fee2e2' }}
-          >
+          <button type="button" className="btn btn-secondary btn-sm" onClick={handleClearPendingAlert}
+            style={{ padding: '4px 10px', fontSize: 'var(--font-xs)', flexShrink: 0 }}>
             Masquer
           </button>
         </div>
       )}
 
-      {pendingUpdate && pendingUpdate.status === 'approved' && (
-        <div style={{
-          backgroundColor: '#f0fdf4',
-          border: '1px solid #22c55e',
-          borderRadius: 'var(--radius-lg)',
-          padding: 'var(--space-4) var(--space-5)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          color: '#15803d'
-        }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: 'var(--font-sm)' }}>
-              <span style={{ display: 'inline-block', width: '8px', height: '8px', backgroundColor: '#22c55e', borderRadius: '50%' }}></span>
-              Modifications approuvées et appliquées !
-            </div>
-            <p style={{ fontSize: 'var(--font-xs)', color: '#16a34a', margin: 0 }}>
-              Le Super Administrateur a validé vos modifications de profil. Elles sont maintenant appliquées.
-            </p>
-          </div>
-          <button 
-            type="button" 
-            className="btn btn-secondary btn-sm" 
-            onClick={handleClearPendingAlert}
-            style={{ padding: '4px 10px', fontSize: 'var(--font-xs)', color: '#16a34a', borderColor: '#dcfce7' }}
-          >
-            Fermer
-          </button>
-        </div>
-      )}
-
+      {/* Form — modifier et soumettre */}
       <form onSubmit={handleSaveSettings} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
-        
-        {/* Profile Card */}
+
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          {/* Card header */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-2)' }}>
             <div style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: 'var(--radius-md)',
-              backgroundColor: 'var(--primary-50)',
-              color: 'var(--primary-500)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
+              width: '36px', height: '36px', borderRadius: 'var(--radius-md)',
+              backgroundColor: 'var(--primary-50)', color: 'var(--primary-500)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
             }}>
               <Landmark size={18} />
             </div>
             <h3 style={{ fontSize: 'var(--font-base)', fontWeight: 700, color: 'var(--neutral-800)' }}>
-              Profil & Contact de la Salle
+              Modifier le profil de la salle
             </h3>
           </div>
 
+          {/* Nom */}
           <div className="input-group">
-            <label className="input-label">Nom commercial de la salle</label>
-            <input 
-              type="text" 
-              className="input-field" 
-              value={salleName} 
-              onChange={(e) => setSalleName(e.target.value)}
-              required 
+            <label className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Landmark size={13} style={{ color: 'var(--neutral-400)' }} />
+              Nom commercial de la salle
+            </label>
+            <input
+              type="text"
+              className="input-field"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Ex : GameHub Bastos"
+              required
             />
           </div>
 
+          {/* Adresse */}
           <div className="input-group">
-            <label className="input-label">Adresse de la salle (Geocodage local)</label>
-            <input 
-              type="text" 
-              className="input-field" 
-              value={salleAddress} 
-              onChange={(e) => setSalleAddress(e.target.value)}
-              required 
+            <label className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <MapPin size={13} style={{ color: 'var(--neutral-400)' }} />
+              Adresse de la salle
+            </label>
+            <input
+              type="text"
+              className="input-field"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="Ex : Bastos, Yaoundé, Cameroun"
+              required
             />
           </div>
 
-          {/* Telephone input validation */}
+          {/* Téléphone */}
           <div className="input-group">
-            <label className="input-label">Numéro de Téléphone</label>
+            <label className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Phone size={13} style={{ color: 'var(--neutral-400)' }} />
+              Numéro de Téléphone
+            </label>
             <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-              <select 
+              <select
                 className="select-field"
                 value={phoneCountryCode}
-                onChange={(e) => {
-                  setPhoneCountryCode(e.target.value);
-                  setRawPhoneNum('');
-                }}
+                onChange={(e) => { setPhoneCountryCode(e.target.value); setRawPhoneNum(''); }}
                 style={{ width: '130px', flexShrink: 0 }}
               >
                 {countries.map(c => (
-                  <option key={c.code} value={c.code}>
-                    {c.flag} {c.code}
-                  </option>
+                  <option key={c.code} value={c.code}>{c.flag} {c.code}</option>
                 ))}
               </select>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 className={`input-field ${rawPhoneNum && rawPhoneNum.length < activeCountry.length ? 'input-error' : ''}`}
                 placeholder={activeCountry.placeholder}
                 value={rawPhoneNum}
                 onChange={(e) => handlePhoneInputChange(e.target.value)}
-                required 
+                required
               />
             </div>
             {rawPhoneNum && rawPhoneNum.length < activeCountry.length && (
@@ -343,35 +364,47 @@ export const AdminSettings: React.FC = () => {
               </span>
             )}
           </div>
+
+          {/* Owner (read-only) */}
+          <div className="input-group">
+            <label className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <User size={13} style={{ color: 'var(--neutral-400)' }} />
+              Propriétaire <span style={{ fontSize: '11px', color: 'var(--neutral-400)', fontWeight: 400 }}>(non modifiable ici)</span>
+            </label>
+            <input
+              type="text"
+              className="input-field"
+              value={salleData?.owner || ''}
+              disabled
+              style={{ backgroundColor: 'var(--neutral-50)', color: 'var(--neutral-400)', cursor: 'not-allowed' }}
+            />
+          </div>
         </div>
 
         {/* Save footer */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--neutral-200)', paddingTop: 'var(--space-4)' }}>
-          <button type="submit" className="btn btn-black" style={{ gap: 'var(--space-2)', width: '180px' }} disabled={pendingUpdate?.status === 'pending'}>
-            <Save size={18} /> Soumettre
+          <button
+            type="submit"
+            className="btn btn-black"
+            style={{ gap: 'var(--space-2)', width: '210px' }}
+            disabled={changeRequest?.status === 'pending' || submitting}
+          >
+            <Save size={16} />
+            {submitting ? 'Envoi en cours...' : changeRequest?.status === 'pending' ? 'Demande en cours...' : 'Soumettre les modifications'}
           </button>
         </div>
-
       </form>
 
       {/* Confirmation Modal */}
-      {confirmModal && confirmModal.isOpen && (
+      {confirmModal?.isOpen && (
         <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100vw',
-          height: '100vh',
-          backgroundColor: 'rgba(20, 23, 34, 0.4)',
-          zIndex: 1050,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
+          position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+          backgroundColor: 'rgba(20, 23, 34, 0.4)', zIndex: 1050,
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
         }}>
           <div className="card animate-fade-in" style={{ width: '100%', maxWidth: '400px', padding: 'var(--space-6)' }}>
-            <h3 style={{ 
-              fontSize: 'var(--font-lg)', 
-              fontWeight: 700, 
+            <h3 style={{
+              fontSize: 'var(--font-lg)', fontWeight: 700,
               color: confirmModal.type === 'danger' ? 'var(--danger-600)' : 'var(--neutral-800)',
               marginBottom: 'var(--space-3)'
             }}>
@@ -382,14 +415,8 @@ export const AdminSettings: React.FC = () => {
             </p>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)' }}>
               <button type="button" className="btn btn-secondary" onClick={() => setConfirmModal(null)}>Annuler</button>
-              <button 
-                type="button" 
-                className="btn btn-black" 
-                onClick={() => {
-                  confirmModal.onConfirm();
-                  setConfirmModal(null);
-                }}
-              >
+              <button type="button" className="btn btn-black"
+                onClick={() => { confirmModal.onConfirm(); setConfirmModal(null); }}>
                 Confirmer
               </button>
             </div>
@@ -397,32 +424,29 @@ export const AdminSettings: React.FC = () => {
         </div>
       )}
 
-      {/* Toast Notification */}
+      {/* Toast */}
       {toast && createPortal(
         <div style={{
-          position: 'fixed',
-          bottom: '24px',
-          right: '24px',
-          backgroundColor: '#ffffff',
-          color: 'var(--neutral-800)',
-          padding: '16px 20px',
-          borderRadius: 'var(--radius-md)',
-          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
-          borderLeft: '4px solid #10b981',
-          zIndex: 9999,
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          fontWeight: 600,
-          fontSize: 'var(--font-sm)',
-          animation: 'fade-in 0.3s ease-out'
+          position: 'fixed', bottom: '24px', right: '24px',
+          backgroundColor: '#ffffff', color: 'var(--neutral-800)',
+          padding: '16px 20px', borderRadius: 'var(--radius-md)',
+          boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)',
+          borderLeft: `4px solid ${toast.type === 'error' ? '#ef4444' : '#10b981'}`,
+          zIndex: 9999, display: 'flex', alignItems: 'center', gap: '12px',
+          fontWeight: 600, fontSize: 'var(--font-sm)', animation: 'fade-in 0.3s ease-out'
         }}>
-          <span style={{ color: '#10b981', backgroundColor: '#ecfdf5', width: '22px', height: '22px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}>✓</span>
+          <span style={{
+            color: toast.type === 'error' ? '#ef4444' : '#10b981',
+            backgroundColor: toast.type === 'error' ? '#fef2f2' : '#ecfdf5',
+            width: '22px', height: '22px', borderRadius: '50%',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px'
+          }}>
+            {toast.type === 'error' ? '✕' : '✓'}
+          </span>
           <span>{toast.message}</span>
         </div>,
         document.body
       )}
-
     </div>
   );
 };

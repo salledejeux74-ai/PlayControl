@@ -149,7 +149,6 @@ export const AdminDashboard: React.FC = () => {
 
       // 6. Build dynamic alerts list
       const baseAlerts: LocalAlert[] = [
-        { id: 'sqlite-save', severity: 'info', message: 'Sauvegarde automatique SQLite locale réussie.', time: 'Aujourd\'hui 03:00' }
       ];
 
       // Add HS postes alerts

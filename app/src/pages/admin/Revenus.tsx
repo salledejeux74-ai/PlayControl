@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { Landmark, Search, FileDown, TrendingUp, RefreshCw, Calendar, AlertCircle, User, X } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../hooks/useAuth';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface Transaction {
   id: string;
@@ -273,6 +275,12 @@ export const AdminRevenus: React.FC = () => {
       `Exporter le rapport en ${format}`,
       `Générer et télécharger le rapport financier de votre salle au format ${format} ?`,
       () => {
+        const dateLabel = dateRange === 'today' ? "Aujourd'hui"
+          : dateRange === 'week' ? '7 derniers jours'
+          : '30 derniers jours';
+        const cashierLabel = selectedCashier ? `Caissier : ${selectedCashier}` : 'Tous les caissiers';
+        const now = new Date();
+
         if (format === 'CSV') {
           const headers = ['Date', 'Client', 'Type', 'Montant (FCFA)', 'Paiement', 'Caissier'];
           const rows = filteredTransactions.map(t => [
@@ -288,11 +296,130 @@ export const AdminRevenus: React.FC = () => {
           const url = URL.createObjectURL(blob);
           const link = document.createElement('a');
           link.href = url;
-          link.download = `rapport_revenus_${new Date().toISOString().split('T')[0]}.csv`;
+          link.download = `rapport_revenus_${now.toISOString().split('T')[0]}.csv`;
           link.click();
           URL.revokeObjectURL(url);
+
+        } else {
+          // ── PDF ───────────────────────────────────────────────────
+          const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+          const pageW = doc.internal.pageSize.getWidth();
+          const margin = 14;
+
+          // ── Header band ────────────────────────────────────────────
+          doc.setFillColor(15, 23, 42);       // dark navy
+          doc.rect(0, 0, pageW, 28, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(16);
+          doc.text('PlayControl — Rapport Financier', margin, 12);
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'normal');
+          doc.text(`Généré le ${now.toLocaleDateString('fr-FR')} à ${now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`, margin, 20);
+          doc.text(`Période : ${dateLabel}   |   ${cashierLabel}`, margin, 25);
+
+          // ── Recap stats row ─────────────────────────────────────────
+          let y = 36;
+          const stats = [
+            { label: 'Total encaissé', value: `${totalAmount.toLocaleString('fr-FR')} FCFA` },
+            { label: 'Sessions', value: `${sessionSales.toLocaleString('fr-FR')} FCFA` },
+            { label: 'Recharges', value: `${rechargeSales.toLocaleString('fr-FR')} FCFA` },
+            { label: 'Abonnements', value: `${abonnementSales.toLocaleString('fr-FR')} FCFA` },
+            { label: 'Transactions', value: `${filteredTransactions.length}` },
+          ];
+          const colW = (pageW - margin * 2) / stats.length;
+          stats.forEach((s, i) => {
+            const x = margin + i * colW;
+            doc.setFillColor(248, 250, 252);
+            doc.roundedRect(x, y, colW - 3, 18, 2, 2, 'F');
+            doc.setTextColor(100, 116, 139);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7);
+            doc.text(s.label.toUpperCase(), x + 3, y + 6);
+            doc.setTextColor(15, 23, 42);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(9);
+            doc.text(s.value, x + 3, y + 13);
+          });
+          y += 24;
+
+          // ── Per-cashier summary table ───────────────────────────────
+          if (cashierStats.length > 0) {
+            doc.setTextColor(15, 23, 42);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(10);
+            doc.text('Récapitulatif par Caissier', margin, y);
+            y += 4;
+
+            autoTable(doc, {
+              startY: y,
+              margin: { left: margin, right: margin },
+              head: [['Caissier', 'Transactions', 'Sessions', 'Recharges', 'Abonnements', 'Total']],
+              body: cashierStats.map(cs => [
+                cs.name,
+                cs.count.toString(),
+                `${cs.sessions.toLocaleString('fr-FR')} F`,
+                `${cs.recharges.toLocaleString('fr-FR')} F`,
+                `${cs.abonnements.toLocaleString('fr-FR')} F`,
+                `${cs.total.toLocaleString('fr-FR')} FCFA`,
+              ]),
+              headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+              bodyStyles: { fontSize: 8, textColor: [30, 41, 59] },
+              alternateRowStyles: { fillColor: [248, 250, 252] },
+              columnStyles: {
+                0: { fontStyle: 'bold' },
+                5: { fontStyle: 'bold', textColor: [37, 99, 235] },
+              },
+              didDrawPage: (data: any) => { y = data.cursor?.y ?? y; },
+            });
+            y = (doc as any).lastAutoTable.finalY + 8;
+          }
+
+          // ── Transactions table ───────────────────────────────────────
+          doc.setTextColor(15, 23, 42);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(10);
+          doc.text('Détail des Transactions', margin, y);
+          y += 4;
+
+          autoTable(doc, {
+            startY: y,
+            margin: { left: margin, right: margin },
+            head: [['Date & Heure', 'Client', 'Type', 'Montant', 'Paiement', 'Caissier']],
+            body: filteredTransactions.map(t => [
+              formatDate(t.created_at),
+              `@${t.client_name}`,
+              t.transaction_type === 'session' ? 'Session' : t.transaction_type === 'recharge' ? 'Recharge' : 'Abonnement',
+              `${t.amount.toLocaleString('fr-FR')} F`,
+              t.payment_method.replace('_', ' '),
+              t.cashier_name,
+            ]),
+            headStyles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+            bodyStyles: { fontSize: 7.5, textColor: [30, 41, 59] },
+            alternateRowStyles: { fillColor: [239, 246, 255] },
+            columnStyles: {
+              3: { fontStyle: 'bold', halign: 'right' },
+            },
+            // Footer row with total
+            foot: [['', '', `${filteredTransactions.length} transactions`, `${totalAmount.toLocaleString('fr-FR')} FCFA`, '', '']],
+            footStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+            showFoot: 'lastPage',
+          });
+
+          // ── Page numbers ───────────────────────────────────────────────
+          const totalPages = (doc.internal as any).getNumberOfPages();
+          for (let i = 1; i <= totalPages; i++) {
+            doc.setPage(i);
+            doc.setFontSize(7);
+            doc.setTextColor(148, 163, 184);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`Page ${i} / ${totalPages}   —   PlayControl © ${now.getFullYear()}`, pageW / 2, doc.internal.pageSize.getHeight() - 6, { align: 'center' });
+          }
+
+          doc.save(`rapport_revenus_${now.toISOString().split('T')[0]}.pdf`);
         }
-        showToastMsg(`Rapport ${format} généré avec succès.`);
+
+        showToastMsg(`Rapport ${format} généré et téléchargé avec succès.`);
       },
       'info'
     );

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { supabase } from '../lib/supabaseClient';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { 
   LayoutDashboard, Gamepad2, Users, FileKey, 
@@ -9,6 +10,16 @@ import {
 } from 'lucide-react';
 import logoImg from '../assets/logo.jpeg';
 
+interface AppNotification {
+  id: string;
+  salle_id: string | null;
+  type: 'info' | 'success' | 'warning' | 'error';
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+}
+
 export const SuperAdminLayout: React.FC = () => {
   const { user, logout } = useAuth();
   const isOnline = useOnlineStatus();
@@ -16,6 +27,64 @@ export const SuperAdminLayout: React.FC = () => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+
+  // ── Notifications dynamiques ───────────────────────────────────────────────
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+
+  const fetchNotifications = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .in('recipient_role', ['superadmin', 'all'])
+      .order('created_at', { ascending: false })
+      .limit(30);
+    if (error) { console.warn('[Notifications SA] fetch error:', error.message); return; }
+    if (data) setNotifications(data as AppNotification[]);
+  }, []);
+
+  useEffect(() => { fetchNotifications(); }, [fetchNotifications]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('notif-superadmin')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' },
+        (payload) => {
+          const n = payload.new as AppNotification & { recipient_role?: string };
+          if (n.recipient_role === 'superadmin' || n.recipient_role === 'all') {
+            setNotifications(prev => [n, ...prev].slice(0, 30));
+          }
+        }
+      )
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications' },
+        (payload) => {
+          const updated = payload.new as AppNotification;
+          setNotifications(prev => prev.map(n => n.id === updated.id ? updated : n));
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  const unreadCount = notifications.filter(n => !n.is_read).length;
+
+  const handleMarkAllRead = async () => {
+    if (unreadCount === 0) return;
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    const { error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .in('recipient_role', ['superadmin', 'all'])
+      .eq('is_read', false);
+    if (error) { console.warn('[Notifications SA] mark-read error:', error.message); fetchNotifications(); }
+  };
+
+  const formatNotifTime = (iso: string) => {
+    const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+    if (diff < 60) return 'À l\'instant';
+    if (diff < 3600) return `Il y a ${Math.floor(diff / 60)} min`;
+    if (diff < 86400) return `Il y a ${Math.floor(diff / 3600)}h`;
+    return new Date(iso).toLocaleDateString('fr-FR');
+  };
 
   // Protection de route : redirige si pas connecté ou pas le bon rôle
   React.useEffect(() => {
@@ -51,11 +120,7 @@ export const SuperAdminLayout: React.FC = () => {
     { to: '/superadmin/settings', icon: <Settings size={20} />, label: 'Paramètres Système' },
   ];
 
-  const mockNotifications = [
-    { id: 1, text: "La licence de la salle 'Zone Gaming' expire dans 3 jours.", time: "Il y a 10 min", type: "warning" },
-    { id: 2, text: "Nouvel administrateur créé pour la salle 'Play Arena'.", time: "Il y a 1 heure", type: "info" },
-    { id: 3, text: "Sauvegarde automatique réussie.", time: "Il y a 3 heures", type: "success" },
-  ];
+
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--neutral-50)' }}>
@@ -231,62 +296,69 @@ export const SuperAdminLayout: React.FC = () => {
 
             {/* Notifications Bell */}
             <div style={{ position: 'relative' }}>
-              <button 
+              <button
                 onClick={() => setShowNotifications(!showNotifications)}
-                className="btn btn-secondary btn-icon" 
+                className="btn btn-secondary btn-icon"
                 style={{ borderRadius: 'var(--radius-full)' }}
               >
                 <Bell size={18} />
-                <span style={{
-                  position: 'absolute',
-                  top: '-2px',
-                  right: '-2px',
-                  backgroundColor: 'var(--danger-500)',
-                  color: 'var(--neutral-0)',
-                  fontSize: '9px',
-                  fontWeight: 700,
-                  width: '16px',
-                  height: '16px',
-                  borderRadius: '50%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: '0 0 0 2px var(--neutral-0)'
-                }}>
-                  3
-                </span>
+                {unreadCount > 0 && (
+                  <span style={{
+                    position: 'absolute', top: '-2px', right: '-2px',
+                    backgroundColor: 'var(--danger-500)', color: 'var(--neutral-0)',
+                    fontSize: '9px', fontWeight: 700, width: '16px', height: '16px',
+                    borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    boxShadow: '0 0 0 2px var(--neutral-0)'
+                  }}>
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
               </button>
 
               {showNotifications && (
                 <div style={{
-                  position: 'absolute',
-                  right: 0,
-                  top: '46px',
-                  width: '320px',
-                  backgroundColor: 'var(--neutral-0)',
-                  borderRadius: 'var(--radius-lg)',
-                  boxShadow: 'var(--shadow-lg)',
-                  border: '1px solid var(--neutral-200)',
-                  padding: 'var(--space-4)',
-                  zIndex: 20
+                  position: 'absolute', right: 0, top: '46px', width: '340px',
+                  backgroundColor: 'var(--neutral-0)', borderRadius: 'var(--radius-lg)',
+                  boxShadow: 'var(--shadow-lg)', border: '1px solid var(--neutral-200)',
+                  zIndex: 20, overflow: 'hidden',
                 }} className="animate-fade-in">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)', paddingBottom: 'var(--space-2)', borderBottom: '1px solid var(--neutral-100)' }}>
-                    <span style={{ fontWeight: 700, fontSize: 'var(--font-sm)' }}>Notifications</span>
-                    <button style={{ fontSize: 'var(--font-xs)', color: 'var(--primary-500)', fontWeight: 600 }}>Tout marquer lu</button>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-3) var(--space-4)', borderBottom: '1px solid var(--neutral-100)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontWeight: 700, fontSize: 'var(--font-sm)' }}>Notifications</span>
+                      {unreadCount > 0 && (
+                        <span style={{ fontSize: '10px', fontWeight: 700, backgroundColor: 'var(--danger-500)', color: '#fff', borderRadius: '20px', padding: '1px 7px' }}>
+                          {unreadCount} non lue{unreadCount > 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
+                    {unreadCount > 0 && (
+                      <button onClick={handleMarkAllRead}
+                        style={{ fontSize: 'var(--font-xs)', color: 'var(--primary-500)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>
+                        Tout marquer lu
+                      </button>
+                    )}
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                    {mockNotifications.map(n => (
-                      <div key={n.id} style={{
-                        padding: 'var(--space-2) var(--space-3)',
-                        borderRadius: 'var(--radius-sm)',
-                        backgroundColor: n.type === 'warning' ? 'var(--warning-50)' : 'var(--neutral-50)',
-                        fontSize: 'var(--font-xs)',
-                        borderLeft: `3px solid ${n.type === 'warning' ? 'var(--warning-500)' : 'var(--primary-400)'}`
-                      }}>
-                        <p style={{ color: 'var(--neutral-800)', fontWeight: 500, marginBottom: '2px' }}>{n.text}</p>
-                        <span style={{ color: 'var(--neutral-400)', fontSize: '9px' }}>{n.time}</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '360px', overflowY: 'auto' }}>
+                    {notifications.length === 0 ? (
+                      <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--neutral-400)', fontSize: 'var(--font-xs)', fontWeight: 500 }}>
+                        Aucune notification pour le moment
                       </div>
-                    ))}
+                    ) : (
+                      notifications.map(n => {
+                        const borderColor = n.type === 'error' ? 'var(--danger-500)' : n.type === 'success' ? 'var(--success-500)' : n.type === 'warning' ? '#f59e0b' : 'var(--primary-400)';
+                        const bgColor = n.is_read ? 'var(--neutral-0)' : n.type === 'error' ? 'var(--danger-50)' : n.type === 'success' ? '#f0fdf4' : n.type === 'warning' ? '#fffbeb' : 'var(--primary-50)';
+                        return (
+                          <div key={n.id} style={{
+                            padding: 'var(--space-3) var(--space-4)', backgroundColor: bgColor,
+                            borderLeft: `3px solid ${borderColor}`, borderBottom: '1px solid var(--neutral-100)',
+                          }}>
+                            <p style={{ color: 'var(--neutral-800)', fontWeight: n.is_read ? 500 : 700, marginBottom: '2px', fontSize: 'var(--font-xs)', lineHeight: 1.4 }}>{n.title}</p>
+                            <p style={{ color: 'var(--neutral-500)', fontSize: '11px', marginBottom: '3px', lineHeight: 1.3 }}>{n.message}</p>
+                            <span style={{ color: 'var(--neutral-400)', fontSize: '10px', fontWeight: 500 }}>{formatNotifTime(n.created_at)}</span>
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
                 </div>
               )}
