@@ -12,6 +12,8 @@ import { supabase } from '../lib/supabaseClient';
 
 interface AppNotification {
   id: string;
+  salle_id: string;
+  recipient_role: string;
   type: 'info' | 'success' | 'warning' | 'error';
   title: string;
   message: string;
@@ -29,11 +31,9 @@ export const AdminLayout: React.FC = () => {
 
   // ── Notifications dynamiques ───────────────────────────────────────────────
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
-  const [notifLoading, setNotifLoading] = useState(false);
 
   const fetchNotifications = useCallback(async () => {
     if (!user?.salleId) return;
-    setNotifLoading(true);
     try {
       const { data, error } = await supabase
         .from('notifications')
@@ -43,14 +43,11 @@ export const AdminLayout: React.FC = () => {
         .order('created_at', { ascending: false })
         .limit(30);
       if (error) {
-        // Table might not exist yet — fail silently
         console.warn('[Notifications] fetch error:', error.message);
         return;
       }
       if (data) setNotifications(data as AppNotification[]);
-    } finally {
-      setNotifLoading(false);
-    }
+    } catch (_) {}
   }, [user?.salleId]);
 
   useEffect(() => {

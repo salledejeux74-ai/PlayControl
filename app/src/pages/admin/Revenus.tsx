@@ -16,15 +16,6 @@ interface Transaction {
   cashier_name: string;
 }
 
-interface ShiftWithTransactions {
-  id: string;
-  profiles: { name: string } | null;
-  opened_at: string;
-  closed_at: string | null;
-  status: 'open' | 'closed';
-  transactions: Transaction[];
-}
-
 // ── Skeleton loader ──────────────────────────────────────────────────────────
 
 const RevenusSkeleton: React.FC = () => (

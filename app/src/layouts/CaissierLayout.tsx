@@ -397,10 +397,7 @@ export const CaissierLayout: React.FC = () => {
     { to: '/caissier/encaissements', icon: <Wallet size={18} />, label: 'Caisse & Paiements' },
   ];
 
-  const mockNotifications = [
-    { id: 1, text: "La session de Gamer_99 sur le Poste 3 se termine dans 5 min !", time: "À l'instant", type: "urgent" },
-    { id: 2, text: "Abonnement expiré pour le client Jean_Dupont.", time: "Il y a 10 min", type: "warning" },
-  ];
+  // notifications are now dynamic (see state above)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: 'var(--neutral-50)' }}>
