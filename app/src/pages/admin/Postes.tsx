@@ -709,6 +709,12 @@ export const AdminPostes: React.FC = () => {
       cardBg = 'var(--neutral-0)';
       statusLabel = 'En Jeu';
       statusBadgeClass = 'badge-info';
+    } else if (post.status === 'en-attente') {
+      borderLeftColor = 'var(--warning-500)';
+      glowShadow = '0 6px 20px rgba(245, 158, 11, 0.15)';
+      cardBg = 'var(--neutral-0)';
+      statusLabel = 'En attente';
+      statusBadgeClass = 'badge-warning';
     } else if (post.status === 'hors-service') {
       borderLeftColor = 'var(--neutral-400)';
       glowShadow = 'var(--shadow-xs)';
@@ -837,6 +843,52 @@ export const AdminPostes: React.FC = () => {
                 </span>
               )}
             </div>
+          ) : post.status === 'en-attente' ? (
+            <div style={{
+              backgroundColor: 'var(--warning-50)',
+              padding: 'var(--space-3) var(--space-4)',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--warning-100)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 'var(--font-xs)', fontWeight: 600, color: 'var(--neutral-600)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  👤 <strong>{post.clientName}</strong>
+                </span>
+                <span style={{ fontSize: 'var(--font-xs)', color: 'var(--warning-600)', fontWeight: 600 }}>
+                  {formatRemainingTime(post.minutesRemaining || 0)}
+                </span>
+              </div>
+              {/* Code de session bien visible */}
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '4px',
+                padding: 'var(--space-3)',
+                background: 'white',
+                borderRadius: 'var(--radius-md)',
+                border: '2px dashed var(--warning-500)'
+              }}>
+                <span style={{ fontSize: '9px', color: 'var(--warning-600)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px' }}>
+                  Code session — à donner au joueur
+                </span>
+                <span style={{
+                  fontSize: '28px',
+                  fontWeight: 900,
+                  letterSpacing: '6px',
+                  color: 'var(--neutral-900)',
+                  fontFamily: 'monospace'
+                }}>
+                  {post.sessionCode}
+                </span>
+              </div>
+              <span style={{ fontSize: '10px', color: 'var(--warning-600)', fontWeight: 500, textAlign: 'center' }}>
+                ⏳ En attente que le joueur active la session
+              </span>
+            </div>
           ) : post.status === 'libre' ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <p style={{ fontSize: 'var(--font-xs)', color: 'var(--neutral-500)', lineHeight: 1.4, margin: 0, fontStyle: 'italic' }}>
@@ -916,6 +968,17 @@ export const AdminPostes: React.FC = () => {
                     <Ban size={12} />
                   </button>
                 </>
+              )}
+
+              {post.status === 'en-attente' && (
+                <button
+                  onClick={() => handleEndSession(post.id, post.name, post.clientName || '')}
+                  className="btn btn-secondary btn-sm"
+                  style={{ color: 'var(--warning-600)', borderColor: 'var(--warning-100)', backgroundColor: 'var(--warning-50)', fontWeight: 600 }}
+                  title="Annuler la session en attente"
+                >
+                  Annuler
+                </button>
               )}
 
               {post.status === 'occupe' && (
