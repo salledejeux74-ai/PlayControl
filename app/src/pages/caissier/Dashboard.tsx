@@ -41,12 +41,7 @@ interface MemberClient {
   abonnementRemainingTime?: number; // In minutes
 }
 
-interface AbonnementPackage {
-  id: string;
-  type: 'Journalier' | 'Hebdomadaire' | 'Mensuel' | 'VIP';
-  price: number;
-  duration_hours: number;
-}
+
 
 const formatRemainingTime = (minutes: number): string => {
   if (minutes < 0) return '0 min';
@@ -92,7 +87,6 @@ export const CaissierDashboard: React.FC = () => {
   const [postes, setPostes] = useState<GameStation[]>([]);
   const [materialTypes, setMaterialTypes] = useState<MaterialType[]>([]);
   const [memberClients, setMemberClients] = useState<MemberClient[]>([]);
-  const [dbPackages, setDbPackages] = useState<AbonnementPackage[]>([]);
   const [loading, setLoading] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState<'espèces' | 'mobile_money'>('espèces');
 
@@ -183,11 +177,7 @@ export const CaissierDashboard: React.FC = () => {
 
       await fetchClientsOnly();
 
-      const { data: pkgData, error: pkgError } = await supabase
-        .from('abonnement_packages')
-        .select('*');
-      if (pkgError) throw pkgError;
-      setDbPackages(pkgData || []);
+
 
       const { data: ptData, error: ptError } = await supabase
         .from('postes')

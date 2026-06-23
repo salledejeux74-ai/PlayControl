@@ -40,12 +40,7 @@ interface MemberClient {
   abonnementRemainingTime?: number;
 }
 
-interface AbonnementPackage {
-  id: string;
-  type: 'Journalier' | 'Hebdomadaire' | 'Mensuel' | 'VIP';
-  price: number;
-  duration_hours: number;
-}
+
 
 const formatRemainingTime = (minutes: number): string => {
   if (minutes < 0) return '0 min';
@@ -90,8 +85,6 @@ export const AdminPostes: React.FC = () => {
   const [postes, setPostes] = useState<GameStation[]>([]);
   const [materialTypes, setMaterialTypes] = useState<MaterialType[]>([]);
   const [dbClients, setDbClients] = useState<MemberClient[]>([]);
-  const [dbPackages, setDbPackages] = useState<AbonnementPackage[]>([]);
-  const [loading, setLoading] = useState(true);
 
   // Filters
   const [filterType, setFilterType] = useState<string>('all');
@@ -153,7 +146,6 @@ export const AdminPostes: React.FC = () => {
 
   const fetchData = async () => {
     try {
-      setLoading(true);
       const { data: mtData, error: mtError } = await supabase
         .from('material_types')
         .select('*')
@@ -195,11 +187,7 @@ export const AdminPostes: React.FC = () => {
         setSelectedClient(mappedClients[0].username);
       }
 
-      const { data: pkgData, error: pkgError } = await supabase
-        .from('abonnement_packages')
-        .select('*');
-      if (pkgError) throw pkgError;
-      setDbPackages(pkgData || []);
+
 
       const { data: ptData, error: ptError } = await supabase
         .from('postes')
@@ -210,8 +198,6 @@ export const AdminPostes: React.FC = () => {
       setPostes((ptData || []).map(mapPosteFromDb));
     } catch (err: any) {
       showToastMsg(err.message, 'error');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -491,10 +477,6 @@ export const AdminPostes: React.FC = () => {
         const targetClient = dbClients.find(c => c.username === selectedClient);
         if (targetClient) {
           if (launchMode === 'time') {
-            const targetType = materialTypes.find(t => t.type === showLaunchModal.type);
-            const rate = targetType ? targetType.price : 1000;
-            const rateDuration = targetType ? targetType.durationMinutes : 60;
-            const cost = Math.ceil((rate / rateDuration) * duration);
             await supabase.from('clients').update({ balance: targetClient.balance }).eq('id', targetClient.id);
           } else {
             await supabase.from('clients').update({ abonnement_remaining_time: targetClient.abonnementRemainingTime }).eq('id', targetClient.id);

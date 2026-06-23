@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Gamepad2, Clock, Star, Play, LogOut, ArrowRight, KeyRound, ChevronRight } from 'lucide-react';
+import { Gamepad2, Clock, Star, Play, LogOut, KeyRound, ChevronRight } from 'lucide-react';
 import logoImg from '../../assets/logo.jpeg';
 import { supabase } from '../../lib/supabaseClient';
 
@@ -63,40 +63,7 @@ const mapPosteFromDb = (p: any): GameStation => ({
   updatedAt: p.updated_at
 });
 
-// ─── Toast ────────────────────────────────────────────────────────────────────
 
-const Toast: React.FC<{ message: string; type: 'success' | 'error' }> = ({ message, type }) => (
-  <div style={{
-    position: 'fixed',
-    bottom: '24px',
-    right: '24px',
-    backgroundColor: '#ffffff',
-    color: 'var(--neutral-800)',
-    padding: '16px 20px',
-    borderRadius: 'var(--radius-md)',
-    boxShadow: 'var(--shadow-xl)',
-    borderLeft: `4px solid ${type === 'error' ? 'var(--danger-500)' : 'var(--success-500)'}`,
-    zIndex: 9999,
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    fontWeight: 600,
-    fontSize: 'var(--font-sm)',
-    animation: 'fadeIn var(--transition-base) ease-out',
-    maxWidth: '360px',
-  }}>
-    <span style={{
-      color: type === 'error' ? 'var(--danger-500)' : 'var(--success-500)',
-      backgroundColor: type === 'error' ? 'var(--danger-50)' : 'var(--success-50)',
-      width: '22px', height: '22px', borderRadius: '50%',
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px',
-      flexShrink: 0,
-    }}>
-      {type === 'error' ? '✕' : '✓'}
-    </span>
-    <span>{message}</span>
-  </div>
-);
 
 
 // ─── Écran Login (design system de l'app) ────────────────────────────────────
@@ -458,12 +425,9 @@ const PlayerDashboard: React.FC<{
   onLogout: () => void;
   onActivateSession: () => void;
 }> = ({ client, postes, materialTypes, onLogout, onActivateSession }) => {
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
-  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3500);
-  };
+
+
 
   const myActivePoste = postes.find(
     p => (p.status === 'occupe' || p.status === 'en-attente') && p.clientName === client.username
@@ -706,7 +670,7 @@ const PlayerDashboard: React.FC<{
 
       </div>
 
-      {toast && <Toast message={toast.message} type={toast.type} />}
+
     </div>
   );
 };

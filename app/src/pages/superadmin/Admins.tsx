@@ -63,7 +63,6 @@ export const Admins: React.FC = () => {
 
   // Direct password reset states
   const [resettingPasswordForUser, setResettingPasswordForUser] = useState<AdminUser | null>(null);
-  const [newGérantPassword, setNewGérantPassword] = useState('');
   const [confirmAdminPassword, setConfirmAdminPassword] = useState('');
   const [resetError, setResetError] = useState('');
   const [isResetting, setIsResetting] = useState(false);

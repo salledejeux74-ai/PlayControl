@@ -101,7 +101,7 @@ export const SuperAdminDashboard: React.FC = () => {
         .limit(2);
 
       if (licencesData) {
-        licencesData.forEach((lic: any, idx: number) => {
+        licencesData.forEach((lic: any) => {
           alertsList.push({
             id: alertsList.length + 1,
             message: `Licence expirante (Salle : ${lic.salles?.name || 'Inconnue'})`,

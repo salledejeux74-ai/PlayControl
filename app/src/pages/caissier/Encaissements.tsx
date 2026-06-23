@@ -5,38 +5,9 @@ import { useAuth } from '../../hooks/useAuth';
 import { Landmark, Wallet, Check, AlertTriangle, FileDown, ShieldAlert } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 
-interface GameStation {
-  id: string;
-  name: string;
-  type: string;
-  characteristics: string;
-  smartPlugIp: string;
-  status: 'libre' | 'occupe' | 'hors-service';
-  clientName?: string;
-  minutesRemaining?: number;
-  totalDuration?: number;
-}
 
-const getPostesFromStorage = (): GameStation[] => {
-  const saved = localStorage.getItem('playcontrol_postes');
-  if (saved) {
-    try {
-      return JSON.parse(saved);
-    } catch (e) {
-      // ignore
-    }
-  }
-  return [
-    { id: '1', name: 'PS5 - VIP #1', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Manette DualSense Edge', smartPlugIp: '192.168.1.101', status: 'occupe', clientName: 'Gamer_Pro', minutesRemaining: 45, totalDuration: 120 },
-    { id: '2', name: 'PS5 - Standard #2', type: 'ps5_standard', characteristics: 'Écran 1080p, Manette standard', smartPlugIp: '192.168.1.102', status: 'libre' },
-    { id: '3', name: 'PS5 - Standard #3', type: 'ps5_standard', characteristics: 'Écran 1080p, Manette standard', smartPlugIp: '192.168.1.103', status: 'hors-service' },
-    { id: '4', name: 'PS5 - VIP #2', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Canapé Confort VIP', smartPlugIp: '192.168.1.104', status: 'occupe', clientName: 'Marc_K', minutesRemaining: 120, totalDuration: 180 },
-    { id: '5', name: 'PS4 - Standard #1', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.105', status: 'libre' },
-    { id: '6', name: 'PS4 - Standard #2', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.106', status: 'libre' },
-    { id: '7', name: 'PS5 - VIP #3', type: 'ps5_vip', characteristics: 'Écran 4K 120Hz, Canapé Confort VIP', smartPlugIp: '192.168.1.107', status: 'occupe', clientName: 'Alain_T', minutesRemaining: 15, totalDuration: 60 },
-    { id: '8', name: 'PS4 - Standard #3', type: 'ps4_standard', characteristics: 'Écran 1080p, Manette DualShock 4', smartPlugIp: '192.168.1.108', status: 'libre' },
-  ];
-};
+
+
 
 const printShiftReceipt = (data: {
   cashierName: string;
@@ -184,7 +155,7 @@ export const CaissierEncaissements: React.FC = () => {
   const [activeShift, setActiveShift] = useState<any | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [initialCash, setInitialCash] = useState<number>(50000);
-  const [loading, setLoading] = useState<boolean>(true);
+
 
   const [showCloseShiftModal, setShowCloseShiftModal] = useState(false);
   const [actualCashInput, setActualCashInput] = useState<string>('');
@@ -210,7 +181,6 @@ export const CaissierEncaissements: React.FC = () => {
   const fetchActiveShiftAndTransactions = async () => {
     if (!user) return;
     try {
-      setLoading(true);
       const { data: shiftData, error: shiftError } = await supabase
         .from('shifts')
         .select('*')
@@ -243,8 +213,6 @@ export const CaissierEncaissements: React.FC = () => {
       }
     } catch (e: any) {
       showToastMsg(e.message, 'error');
-    } finally {
-      setLoading(false);
     }
   };
 

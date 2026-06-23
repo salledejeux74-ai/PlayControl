@@ -375,7 +375,7 @@ export const Salles: React.FC = () => {
         const fileName = `${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
         const filePath = `owners/${fileName}`;
 
-        const { data: uploadData, error: uploadError } = await supabase.storage
+        const { error: uploadError } = await supabase.storage
           .from('salles')
           .upload(filePath, newSalleOwnerPhotoFile);
 
@@ -502,7 +502,7 @@ export const Salles: React.FC = () => {
         const fileName = `${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
         const filePath = `owners/${fileName}`;
 
-        const { data: uploadData, error: uploadError } = await supabase.storage
+        const { error: uploadError } = await supabase.storage
           .from('salles')
           .upload(filePath, editSalleOwnerPhotoFile);
 
