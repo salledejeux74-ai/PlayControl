@@ -242,7 +242,7 @@ export const Login: React.FC = () => {
             >
               Super Admin
             </button>
-            <button
+            {/* <button
               onClick={() => handleQuickLogin('admin')}
               className="btn btn-secondary btn-sm"
               style={{ textAlign: 'center', fontSize: '11px', padding: 'var(--space-2) var(--space-1)' }}
@@ -255,7 +255,7 @@ export const Login: React.FC = () => {
               style={{ textAlign: 'center', fontSize: '11px', padding: 'var(--space-2) var(--space-1)' }}
             >
               Caissier
-            </button>
+            </button> */}
           </div>
         </div>
       </div>
