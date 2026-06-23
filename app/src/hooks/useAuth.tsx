@@ -45,9 +45,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Récupérer le profil utilisateur
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('name, role, salle_id')
+      .select('name, role, salle_id, status')
       .eq('id', authData.user.id)
       .single();
+
+    if (profile && profile.status === 'suspended') {
+      await supabase.auth.signOut();
+      throw new Error('Votre compte caissier a été suspendu par le gérant.');
+    }
 
     let role: UserRole = 'caissier';
     let name = authData.user.email || 'Utilisateur';
@@ -59,6 +64,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       role = (meta.role || 'caissier') as UserRole;
       name = (meta.name && meta.name !== 'Utilisateur') ? meta.name : (authData.user.email || 'Utilisateur');
       salleId = meta.salle_id || undefined;
+      
+      if (meta.status === 'suspended') {
+        await supabase.auth.signOut();
+        throw new Error('Votre compte caissier a été suspendu par le gérant.');
+      }
     } else {
       role = profile.role as UserRole;
       name = (profile.name && profile.name !== 'Utilisateur') ? profile.name : (authData.user.email || 'Utilisateur');

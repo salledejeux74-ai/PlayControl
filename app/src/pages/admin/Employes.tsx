@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Search, Trash2, KeyRound, UserMinus, UserCheck, ShieldAlert, Edit2, CheckCircle } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
+import { useAuth } from '../../hooks/useAuth';
 
 interface Employee {
   id: string;
@@ -10,13 +12,10 @@ interface Employee {
   status: 'active' | 'suspended';
   lastLogin: string;
 }
-
 export const AdminEmployes: React.FC = () => {
-  const [employees, setEmployees] = useState<Employee[]>([
-    { id: '1', name: 'Sophie Caisse', email: 'sophie.caisse@playcontrol.com', phone: '+237 699 12 34 56', status: 'active', lastLogin: '25-06-2026 08:00' },
-    { id: '2', name: 'Jean Bernard', email: 'jean.b@playcontrol.com', phone: '+225 07 12 34 56 78', status: 'active', lastLogin: '24-06-2026 22:30' },
-    { id: '3', name: 'Marie Ngo', email: 'marie.n@playcontrol.com', phone: '+237 677 88 99 00', status: 'suspended', lastLogin: '18-05-2026 14:15' },
-  ]);
+  const { user } = useAuth();
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -82,9 +81,43 @@ export const AdminEmployes: React.FC = () => {
     }
   };
 
-  const handleCreateEmployee = (e: React.FormEvent) => {
+  const fetchEmployees = async () => {
+    if (!user || !user.salleId) return;
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'caissier')
+        .eq('salle_id', user.salleId)
+        .order('name', { ascending: true });
+
+      if (error) throw error;
+
+      const mapped = (data || []).map(p => ({
+        id: p.id,
+        name: p.name || '',
+        email: p.email,
+        phone: p.phone || '',
+        status: (p.status || 'active') as 'active' | 'suspended',
+        lastLogin: p.temp_password ? `M.P. temporaire: ${p.temp_password}` : 'Déjà connecté'
+      }));
+      setEmployees(mapped);
+    } catch (err: any) {
+      showToastMsg(err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchEmployees();
+  }, [user]);
+
+  const handleCreateEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName || !newEmail) return;
+    if (!user || !user.salleId) return;
 
     if (rawPhoneNum.length !== activeCountry.length) {
       showToastMsg(`Le numéro de téléphone pour le ${activeCountry.name} doit contenir exactement ${activeCountry.length} chiffres.`, 'error');
@@ -92,22 +125,47 @@ export const AdminEmployes: React.FC = () => {
     }
 
     const finalPhone = `${phoneCountryCode} ${rawPhoneNum.trim()}`;
+    const tempPassword = Math.random().toString(36).slice(-8);
 
-    const newEmp: Employee = {
-      id: String(employees.length + 1),
-      name: newName,
-      email: newEmail,
-      phone: finalPhone,
-      status: 'active',
-      lastLogin: 'Jamais connecté'
-    };
+    try {
+      // 1. Create in auth
+      const { data, error } = await supabase.auth.admin.createUser({
+        email: newEmail,
+        password: tempPassword,
+        email_confirm: true,
+        user_metadata: {
+          name: newName,
+          role: 'caissier',
+          salle_id: user.salleId,
+          temp_password: tempPassword,
+          phone: finalPhone,
+          status: 'active'
+        }
+      });
 
-    setEmployees([...employees, newEmp]);
-    setShowAddModal(false);
-    setNewName('');
-    setNewEmail('');
-    setRawPhoneNum('');
-    showToastMsg(`Le compte caissier de "${newName}" a été créé.`);
+      if (error) throw error;
+
+      // 2. Update profiles table
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          phone: finalPhone,
+          status: 'active',
+          temp_password: tempPassword
+        })
+        .eq('id', data.user.id);
+
+      if (profileError) throw profileError;
+
+      showToastMsg(`Le compte caissier de "${newName}" a été créé avec le mot de passe temporaire : ${tempPassword}`);
+      setShowAddModal(false);
+      setNewName('');
+      setNewEmail('');
+      setRawPhoneNum('');
+      fetchEmployees();
+    } catch (err: any) {
+      showToastMsg(err.message, 'error');
+    }
   };
 
   const handleEditClick = (emp: Employee) => {
@@ -126,7 +184,7 @@ export const AdminEmployes: React.FC = () => {
     }
   };
 
-  const handleSaveEditEmployee = (e: React.FormEvent) => {
+  const handleSaveEditEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showEditModal || !editName || !editEmail) return;
 
@@ -137,20 +195,31 @@ export const AdminEmployes: React.FC = () => {
 
     const finalPhone = `${editPhoneCountryCode} ${editRawPhoneNum.trim()}`;
 
-    setEmployees(employees.map(emp => {
-      if (emp.id === showEditModal.id) {
-        return {
-          ...emp,
+    try {
+      // 1. Update profiles table
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
           name: editName,
           email: editEmail,
           phone: finalPhone
-        };
-      }
-      return emp;
-    }));
+        })
+        .eq('id', showEditModal.id);
 
-    setShowEditModal(null);
-    showToastMsg(`Les informations de "${editName}" ont été mises à jour.`);
+      if (profileError) throw profileError;
+
+      // 2. Update auth
+      await supabase.auth.admin.updateUserById(showEditModal.id, {
+        email: editEmail,
+        user_metadata: { name: editName, phone: finalPhone }
+      });
+
+      showToastMsg(`Les informations de "${editName}" ont été mises à jour.`);
+      setShowEditModal(null);
+      fetchEmployees();
+    } catch (err: any) {
+      showToastMsg(err.message, 'error');
+    }
   };
 
   const handleToggleStatus = (id: string, name: string, currentStatus: 'active' | 'suspended') => {
@@ -160,25 +229,57 @@ export const AdminEmployes: React.FC = () => {
       isSuspended 
         ? `Êtes-vous sûr de vouloir suspendre le compte de "${name}" ? Cet employé ne pourra plus se connecter à la caisse.` 
         : `Voulez-vous réactiver le compte de "${name}" ?`,
-      () => {
-        setEmployees(employees.map(emp => {
-          if (emp.id === id) {
-            return { ...emp, status: isSuspended ? 'suspended' : 'active' };
-          }
-          return emp;
-        }));
-        showToastMsg(`Le compte de "${name}" est désormais ${isSuspended ? 'suspendu' : 'actif'}.`);
+      async () => {
+        try {
+          // 1. Update profiles table
+          const { error } = await supabase
+            .from('profiles')
+            .update({ status: isSuspended ? 'suspended' : 'active' })
+            .eq('id', id);
+
+          if (error) throw error;
+
+          // 2. Update auth user_metadata
+          await supabase.auth.admin.updateUserById(id, {
+            user_metadata: { status: isSuspended ? 'suspended' : 'active' }
+          });
+
+          showToastMsg(`Le compte de "${name}" est désormais ${isSuspended ? 'suspendu' : 'actif'}.`);
+          fetchEmployees();
+        } catch (err: any) {
+          showToastMsg(err.message, 'error');
+        }
       },
       isSuspended ? 'warning' : 'info'
     );
   };
 
-  const handleResetPassword = (name: string) => {
+  const handleResetPassword = (id: string, name: string) => {
+    const tempPassword = Math.random().toString(36).slice(-8);
     openConfirm(
       "Réinitialiser le mot de passe",
-      `Êtes-vous sûr de vouloir réinitialiser le mot de passe de "${name}" ? Un mot de passe temporaire lui sera généré automatiquement.`,
-      () => {
-        showToastMsg(`Un mot de passe temporaire a été généré et envoyé à l'employé "${name}".`);
+      `Êtes-vous sûr de vouloir réinitialiser le mot de passe de "${name}" ? Un mot de passe temporaire unique sera généré automatiquement.`,
+      async () => {
+        try {
+          // 1. Update auth password
+          const { error } = await supabase.auth.admin.updateUserById(id, {
+            password: tempPassword,
+            user_metadata: { temp_password: tempPassword }
+          });
+
+          if (error) throw error;
+
+          // 2. Save in profiles
+          await supabase
+            .from('profiles')
+            .update({ temp_password: tempPassword })
+            .eq('id', id);
+
+          showToastMsg(`Le mot de passe temporaire pour "${name}" a été réinitialisé : ${tempPassword}`);
+          fetchEmployees();
+        } catch (err: any) {
+          showToastMsg(err.message, 'error');
+        }
       },
       'info'
     );
@@ -188,9 +289,16 @@ export const AdminEmployes: React.FC = () => {
     openConfirm(
       "Supprimer l'employé",
       `Êtes-vous sûr de vouloir supprimer définitivement le compte de "${name}" ? Cette action est irréversible.`,
-      () => {
-        setEmployees(employees.filter(emp => emp.id !== id));
-        showToastMsg(`Le compte de "${name}" a été supprimé.`);
+      async () => {
+        try {
+          const { error } = await supabase.auth.admin.deleteUser(id);
+          if (error) throw error;
+
+          showToastMsg(`Le compte de "${name}" a été supprimé.`);
+          fetchEmployees();
+        } catch (err: any) {
+          showToastMsg(err.message, 'error');
+        }
       },
       'danger'
     );
@@ -201,6 +309,22 @@ export const AdminEmployes: React.FC = () => {
     emp.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
     emp.phone.includes(searchTerm)
   );
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ width: '40px', height: '40px', borderRadius: '50%', border: '4px solid var(--primary-100)', borderTopColor: 'var(--primary-500)', animation: 'spin 1s linear infinite' }} />
+        <span style={{ fontSize: 'var(--font-sm)', color: 'var(--neutral-500)', fontWeight: 600 }}>
+          Chargement des comptes employés...
+        </span>
+        <style>{`
+          @keyframes spin {
+            to { transform: rotate(360deg); }
+          }
+        `}</style>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
@@ -291,7 +415,7 @@ export const AdminEmployes: React.FC = () => {
                         <Edit2 size={14} />
                       </button>
                       <button 
-                        onClick={() => handleResetPassword(emp.name)} 
+                        onClick={() => handleResetPassword(emp.id, emp.name)} 
                         className="btn btn-secondary btn-icon" 
                         title="Réinitialiser le mot de passe"
                       >
