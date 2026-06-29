@@ -116,7 +116,7 @@ export const Logs: React.FC = () => {
       </div>
 
       {/* Logs Table */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+      <div className="table-container">
         <table className="table">
           <thead>
             <tr>

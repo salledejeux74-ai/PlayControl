@@ -563,7 +563,7 @@ export const Admins: React.FC = () => {
       </div>
 
       {/* Admins Table */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+      <div className="table-container">
         <table className="table">
           <thead>
             <tr>

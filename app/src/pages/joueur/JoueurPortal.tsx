@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Gamepad2, Clock, Star, Play, LogOut, KeyRound, ChevronRight } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Gamepad2, Clock, Play, LogOut, KeyRound, ChevronRight } from 'lucide-react';
 import logoImg from '../../assets/logo.jpeg';
 import { supabase } from '../../lib/supabaseClient';
 
@@ -131,11 +131,10 @@ const LoginScreen: React.FC<{
       }} />
 
       <div
-        className="card animate-fade-in"
+        className="card portal-card animate-fade-in"
         style={{
           width: '100%',
           maxWidth: '440px',
-          padding: 'var(--space-10)',
           boxShadow: 'var(--shadow-xl)',
           borderRadius: 'var(--radius-xl)',
           zIndex: 1,
@@ -245,9 +244,9 @@ const CodeActivationScreen: React.FC<{
     setError('');
     const normalized = code.trim().toUpperCase();
 
-    // Find a poste 'en-attente' with matching code AND client name
+    // Find a poste 'en-attente' or 'occupe' with matching code AND client name
     const matchedPoste = postes.find(
-      p => p.status === 'en-attente' &&
+      p => (p.status === 'en-attente' || p.status === 'occupe') &&
            p.sessionCode === normalized &&
            p.clientName === client.username
     );
@@ -265,12 +264,11 @@ const CodeActivationScreen: React.FC<{
       return;
     }
 
-    // Activate in database: set status to 'occupe', remove sessionCode
+    // Activate in database: set status to 'occupe', keep session_code
     const { error: updateErr } = await supabase
       .from('postes')
       .update({
-        status: 'occupe',
-        session_code: null
+        status: 'occupe'
       })
       .eq('id', matchedPoste.id);
 
@@ -281,6 +279,7 @@ const CodeActivationScreen: React.FC<{
       return;
     }
 
+    localStorage.setItem('playcontrol_session_code', normalized);
     setSuccess(true);
     setTimeout(() => {
       onActivated();
@@ -310,10 +309,9 @@ const CodeActivationScreen: React.FC<{
       }} />
 
       <div
-        className="card animate-fade-in"
+        className="card portal-card animate-fade-in"
         style={{
           width: '100%', maxWidth: '440px',
-          padding: 'var(--space-10)',
           boxShadow: 'var(--shadow-xl)',
           borderRadius: 'var(--radius-xl)',
           zIndex: 1,
@@ -435,12 +433,7 @@ const PlayerDashboard: React.FC<{
   const myActivePoste = postes.find(
     p => (p.status === 'occupe' || p.status === 'en-attente') && p.clientName === client.username
   );
-  const freePostes = postes.filter(p => p.status === 'libre');
   const getMTypeLabel = (type: string) => materialTypes.find(t => t.type === type)?.label || type;
-  const getMTypePrice = (type: string) => {
-    const mt = materialTypes.find(t => t.type === type);
-    return mt ? `${mt.price} FCFA / ${mt.durationMinutes} min` : '';
-  };
 
   const percentRemaining = myActivePoste?.minutesRemaining && myActivePoste?.totalDuration
     ? (myActivePoste.minutesRemaining / myActivePoste.totalDuration) * 100
@@ -475,7 +468,7 @@ const PlayerDashboard: React.FC<{
             <div>
               <p style={{ color: 'var(--neutral-500)', fontSize: 'var(--font-xs)', margin: 0 }}>Espace Joueur</p>
               <h1 style={{ fontSize: 'var(--font-lg)', fontWeight: 800, color: 'var(--neutral-800)', margin: 0 }}>
-                Bonjour, {client.fullName.split(' ')[0]} 👋
+                Bonjour, {client.id === 'guest' ? 'Joueur' : client.fullName.split(' ')[0]} 👋
               </h1>
             </div>
           </div>
@@ -489,47 +482,49 @@ const PlayerDashboard: React.FC<{
         </div>
 
         {/* Profile cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-5)' }}>
-          {/* Balance */}
-          <div className="card" style={{ background: 'var(--gradient-subtle)', border: '1px solid var(--primary-100)' }}>
-            <p style={{ color: 'var(--neutral-500)', fontSize: 'var(--font-xs)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 var(--space-2)' }}>
-              💰 Solde disponible
-            </p>
-            <p style={{ fontSize: 'var(--font-2xl)', fontWeight: 800, color: 'var(--primary-600)', margin: 0 }}>
-              {client.balance.toLocaleString()} <span style={{ fontSize: 'var(--font-sm)', fontWeight: 600, color: 'var(--neutral-500)' }}>FCFA</span>
-            </p>
-          </div>
-
-          {/* Abonnement */}
-          <div className="card" style={{
-            background: client.abonnementType !== 'Aucun' ? 'var(--warning-50)' : 'var(--neutral-0)',
-            border: `1px solid ${client.abonnementType !== 'Aucun' ? 'var(--warning-100)' : 'var(--neutral-200)'}`,
-          }}>
-            <p style={{ color: 'var(--neutral-500)', fontSize: 'var(--font-xs)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 var(--space-2)' }}>
-              ⭐ Abonnement
-            </p>
-            {client.abonnementType !== 'Aucun' ? (
-              <>
-                <p style={{ fontSize: 'var(--font-base)', fontWeight: 800, color: 'var(--warning-600)', margin: '0 0 4px' }}>
-                  Pass {client.abonnementType}
-                </p>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--neutral-600)', fontSize: 'var(--font-xs)' }}>
-                  <Clock size={12} />
-                  <span>{formatTime(client.abonnementRemainingTime || 0)} restants</span>
-                </div>
-                {client.abonnementExpiration && (
-                  <p style={{ color: 'var(--neutral-400)', fontSize: '11px', margin: '4px 0 0' }}>
-                    Expire le {client.abonnementExpiration}
-                  </p>
-                )}
-              </>
-            ) : (
-              <p style={{ color: 'var(--neutral-400)', fontSize: 'var(--font-sm)', margin: 0 }}>
-                Aucun abonnement actif
+        {client.id !== 'guest' && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-5)' }}>
+            {/* Balance */}
+            <div className="card" style={{ background: 'var(--gradient-subtle)', border: '1px solid var(--primary-100)' }}>
+              <p style={{ color: 'var(--neutral-500)', fontSize: 'var(--font-xs)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 var(--space-2)' }}>
+                💰 Solde disponible
               </p>
-            )}
+              <p style={{ fontSize: 'var(--font-2xl)', fontWeight: 800, color: 'var(--primary-600)', margin: 0 }}>
+                {client.balance.toLocaleString()} <span style={{ fontSize: 'var(--font-sm)', fontWeight: 600, color: 'var(--neutral-500)' }}>FCFA</span>
+              </p>
+            </div>
+
+            {/* Abonnement */}
+            <div className="card" style={{
+              background: client.abonnementType !== 'Aucun' ? 'var(--warning-50)' : 'var(--neutral-0)',
+              border: `1px solid ${client.abonnementType !== 'Aucun' ? 'var(--warning-100)' : 'var(--neutral-200)'}`,
+            }}>
+              <p style={{ color: 'var(--neutral-500)', fontSize: 'var(--font-xs)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 var(--space-2)' }}>
+                ⭐ Abonnement
+              </p>
+              {client.abonnementType !== 'Aucun' ? (
+                <>
+                  <p style={{ fontSize: 'var(--font-base)', fontWeight: 800, color: 'var(--warning-600)', margin: '0 0 4px' }}>
+                    Pass {client.abonnementType}
+                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--neutral-600)', fontSize: 'var(--font-xs)' }}>
+                    <Clock size={12} />
+                    <span>{formatTime(client.abonnementRemainingTime || 0)} restants</span>
+                  </div>
+                  {client.abonnementExpiration && (
+                    <p style={{ color: 'var(--neutral-400)', fontSize: '11px', margin: '4px 0 0' }}>
+                      Expire le {client.abonnementExpiration}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p style={{ color: 'var(--neutral-400)', fontSize: 'var(--font-sm)', margin: 0 }}>
+                  Aucun abonnement actif
+                </p>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Session en cours ou CTA */}
         {myActivePoste ? (
@@ -617,59 +612,7 @@ const PlayerDashboard: React.FC<{
           </div>
         )}
 
-        {/* Postes libres */}
-        <div className="card">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-5)' }}>
-            <div className="stat-card-icon blue" style={{ width: '36px', height: '36px' }}>
-              <Star size={16} />
-            </div>
-            <h3 style={{ fontWeight: 700, fontSize: 'var(--font-base)', color: 'var(--neutral-800)', margin: 0 }}>
-              Postes disponibles
-              <span className="badge badge-success" style={{ marginLeft: 'var(--space-3)', fontSize: '10px' }}>
-                {freePostes.length} libre{freePostes.length !== 1 ? 's' : ''}
-              </span>
-            </h3>
-          </div>
 
-          {freePostes.length === 0 ? (
-            <div className="empty-state" style={{ padding: 'var(--space-8) 0' }}>
-              <p className="empty-state-text" style={{ textAlign: 'center' }}>
-                Tous les postes sont occupés en ce moment. 😅
-              </p>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-              {freePostes.slice(0, 5).map(p => (
-                <div key={p.id} style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  padding: 'var(--space-3) var(--space-4)',
-                  background: 'var(--neutral-50)', borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--neutral-100)',
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                    <span className="status-dot libre" />
-                    <div>
-                      <p style={{ fontWeight: 600, fontSize: 'var(--font-sm)', color: 'var(--neutral-800)', margin: 0 }}>
-                        {p.name}
-                      </p>
-                      <p style={{ color: 'var(--neutral-400)', fontSize: '11px', margin: 0 }}>
-                        {getMTypeLabel(p.type)}
-                      </p>
-                    </div>
-                  </div>
-                  <span className="badge badge-success" style={{ fontSize: '11px' }}>
-                    {getMTypePrice(p.type)}
-                  </span>
-                </div>
-              ))}
-              {freePostes.length > 5 && (
-                <p style={{ color: 'var(--neutral-400)', fontSize: 'var(--font-xs)', textAlign: 'center', margin: 0 }}>
-                  + {freePostes.length - 5} autre(s) poste(s) libre(s)
-                </p>
-              )}
-            </div>
-          )}
-        </div>
 
       </div>
 
@@ -689,11 +632,11 @@ export const JoueurPortal: React.FC = () => {
       return null;
     }
   });
-  const [screen, setScreen] = useState<'dashboard' | 'activate-code' | 'guest-success'>('dashboard');
-  const [guestPoste, setGuestPoste] = useState<string>(''); // nom du poste activé pour l'invité
+  const [screen, setScreen] = useState<'dashboard' | 'activate-code'>('dashboard');
   const [postes, setPostes] = useState<GameStation[]>([]);
   const [materialTypes, setMaterialTypes] = useState<MaterialType[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [showLeaveModal, setShowLeaveModal] = useState<boolean>(false);
 
   const fetchData = async () => {
     try {
@@ -810,12 +753,12 @@ export const JoueurPortal: React.FC = () => {
   const handleSubmitCode = async (code: string): Promise<{ success: boolean; error?: string }> => {
     const normalized = code.trim().toUpperCase();
     
-    // Rechercher le poste 'en-attente' correspondant en base
+    // Rechercher le poste correspondant en base (qu'il soit en-attente ou déjà occupe pour reconnexion)
     const { data: posteData, error: posteError } = await supabase
       .from('postes')
       .select('*')
       .eq('session_code', normalized)
-      .eq('status', 'en-attente')
+      .in('status', ['en-attente', 'occupe'])
       .maybeSingle();
 
     if (posteError || !posteData) {
@@ -840,12 +783,11 @@ export const JoueurPortal: React.FC = () => {
         return { success: false, error: 'Compte membre suspendu. Contactez le caissier.' };
       }
 
-      // Activer le poste en base
+      // Activer le poste en base (ou laisser tel quel s'il est déjà occupé)
       const { error: updateError } = await supabase
         .from('postes')
         .update({
-          status: 'occupe',
-          session_code: null
+          status: 'occupe'
         })
         .eq('id', poste.id);
 
@@ -868,15 +810,15 @@ export const JoueurPortal: React.FC = () => {
 
       setLoggedClient(member);
       sessionStorage.setItem('playcontrol_logged_client', JSON.stringify(member));
+      localStorage.setItem('playcontrol_session_code', normalized);
       setScreen('dashboard');
       return { success: true };
     } else {
-      // Activer le poste invité en base
+      // Activer le poste invité en base (ou laisser tel quel s'il est déjà occupé)
       const { error: updateError } = await supabase
         .from('postes')
         .update({
-          status: 'occupe',
-          session_code: null
+          status: 'occupe'
         })
         .eq('id', poste.id);
 
@@ -884,8 +826,21 @@ export const JoueurPortal: React.FC = () => {
         return { success: false, error: `Erreur d'activation : ${updateError.message}` };
       }
 
-      setGuestPoste(poste.name);
-      setScreen('guest-success');
+      const guest: MemberClient = {
+        id: 'guest',
+        username: poste.clientName || 'guest',
+        fullName: poste.clientName || 'Joueur Invité',
+        phone: '',
+        balance: 0,
+        abonnementType: 'Aucun',
+        abonnementExpiration: null,
+        status: 'active'
+      };
+
+      setLoggedClient(guest);
+      sessionStorage.setItem('playcontrol_logged_client', JSON.stringify(guest));
+      localStorage.setItem('playcontrol_session_code', normalized);
+      setScreen('dashboard');
       return { success: true };
     }
   };
@@ -893,7 +848,94 @@ export const JoueurPortal: React.FC = () => {
   const handleLogout = () => {
     setLoggedClient(null);
     sessionStorage.removeItem('playcontrol_logged_client');
+    localStorage.removeItem('playcontrol_session_code');
   };
+
+  const handleCancelLeave = () => {
+    setShowLeaveModal(false);
+    window.history.pushState('active-session', '', window.location.href);
+  };
+
+  const handleConfirmLeave = () => {
+    setShowLeaveModal(false);
+    handleLogout();
+  };
+
+  // Auto-login avec le code stocké localement si la session est toujours active
+  useEffect(() => {
+    const autoLogin = async () => {
+      const savedCode = localStorage.getItem('playcontrol_session_code');
+      if (savedCode && !loggedClient) {
+        try {
+          const res = await handleSubmitCode(savedCode);
+          if (!res.success) {
+            // Le code n'est plus valide/actif, on nettoie le localStorage
+            localStorage.removeItem('playcontrol_session_code');
+          }
+        } catch (e) {
+          console.error("Erreur de reconnexion automatique :", e);
+        }
+      }
+    };
+    if (postes.length > 0) {
+      autoLogin();
+    }
+  }, [postes.length]);
+
+  // Déconnexion automatique pour les invités si la session se termine
+  useEffect(() => {
+    if (loggedClient && postes.length > 0) {
+      const myActivePoste = postes.find(
+        p => (p.status === 'occupe' || p.status === 'en-attente') && p.clientName === loggedClient.username
+      );
+      if (!myActivePoste && loggedClient.id === 'guest') {
+        handleLogout();
+      }
+    }
+  }, [postes, loggedClient]);
+
+  // Avertir l'utilisateur s'il essaie de quitter la page avec une session active
+  const hasActiveSession = postes.some(
+    p => p.status === 'occupe' && loggedClient && p.clientName === loggedClient.username
+  );
+
+  const hasActiveSessionRef = useRef(hasActiveSession);
+
+  useEffect(() => {
+    hasActiveSessionRef.current = hasActiveSession;
+
+    // Si la session devient active, on pousse un état dans l'historique une seule fois
+    if (hasActiveSession) {
+      if (window.history.state !== 'active-session') {
+        window.history.pushState('active-session', '', window.location.href);
+      }
+    }
+  }, [hasActiveSession]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasActiveSessionRef.current) {
+        e.preventDefault();
+        e.returnValue = 'Votre session de jeu est en cours. Si vous quittez la page, vous perdrez le suivi du minuteur.';
+        return e.returnValue;
+      }
+    };
+
+    const handlePopState = () => {
+      if (hasActiveSessionRef.current) {
+        // Bloquer le retour arrière et afficher le modal React personnalisé
+        setShowLeaveModal(true);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
 
   const handleActivated = async () => {
     setScreen('dashboard');
@@ -932,48 +974,7 @@ export const JoueurPortal: React.FC = () => {
     );
   }
 
-  // Écran succès pour invité
-  if (screen === 'guest-success') {
-    return (
-      <div style={{
-        minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'var(--neutral-50)', padding: 'var(--space-6)', position: 'relative', overflow: 'hidden',
-      }}>
-        <div style={{
-          position: 'absolute', width: '500px', height: '500px', borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(26,109,224,0.06) 0%, rgba(124,58,237,0.02) 100%)',
-          top: '-100px', left: '-100px',
-        }} />
-        <div className="card animate-fade-in" style={{
-          width: '100%', maxWidth: '440px', padding: 'var(--space-10)',
-          boxShadow: 'var(--shadow-xl)', borderRadius: 'var(--radius-xl)',
-          zIndex: 1, border: '1px solid var(--neutral-100)', textAlign: 'center',
-        }}>
-          <div style={{ fontSize: '56px', marginBottom: 'var(--space-4)' }}>🎮</div>
-          <h1 className="gradient-text" style={{ fontSize: 'var(--font-xl)', fontWeight: 800, marginBottom: 'var(--space-2)' }}>
-            Session lancée !
-          </h1>
-          <p style={{ color: 'var(--neutral-500)', fontSize: 'var(--font-sm)', marginBottom: 'var(--space-6)', lineHeight: 1.6 }}>
-            Votre session sur <strong>{guestPoste}</strong> est maintenant active. Bonne session ! 🕹️
-          </p>
-          <div style={{
-            background: 'var(--success-50)', border: '1px solid var(--success-100)',
-            borderRadius: 'var(--radius-md)', padding: 'var(--space-4)',
-            color: 'var(--success-700)', fontSize: 'var(--font-sm)', fontWeight: 500,
-          }}>
-            ✅ Le timer démarre maintenant. Profitez bien !
-          </div>
-          <button
-            onClick={() => setScreen('dashboard')}
-            className="btn btn-secondary"
-            style={{ width: '100%', marginTop: 'var(--space-4)' }}
-          >
-            Aller à l'accueil
-          </button>
-        </div>
-      </div>
-    );
-  }
+
 
   if (!loggedClient) {
     return <LoginScreen onSubmitCode={handleSubmitCode} />;
@@ -991,12 +992,84 @@ export const JoueurPortal: React.FC = () => {
   }
 
   return (
-    <PlayerDashboard
-      client={loggedClient}
-      postes={postes}
-      materialTypes={materialTypes}
-      onLogout={handleLogout}
-      onActivateSession={() => setScreen('activate-code')}
-    />
+    <>
+      <PlayerDashboard
+        client={loggedClient}
+        postes={postes}
+        materialTypes={materialTypes}
+        onLogout={handleLogout}
+        onActivateSession={() => setScreen('activate-code')}
+      />
+
+      {showLeaveModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.45)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: 'var(--space-4)',
+        }}>
+          <div style={{
+            background: 'var(--neutral-0)',
+            width: '100%',
+            maxWidth: '400px',
+            borderRadius: 'var(--radius-xl)',
+            padding: 'var(--space-6)',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            border: '1px solid var(--neutral-100)',
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 'var(--space-4)',
+          }}>
+            <div style={{
+              width: '56px',
+              height: '56px',
+              borderRadius: 'var(--radius-full)',
+              backgroundColor: 'var(--danger-50)',
+              color: 'var(--danger-600)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '24px',
+              margin: '0 auto'
+            }}>
+              ⚠️
+            </div>
+            <div>
+              <h3 style={{ fontSize: 'var(--font-lg)', fontWeight: 800, color: 'var(--neutral-800)', margin: '0 0 var(--space-2)' }}>
+                Session en cours !
+              </h3>
+              <p style={{ color: 'var(--neutral-500)', fontSize: 'var(--font-sm)', lineHeight: 1.5, margin: 0 }}>
+                Votre session de jeu est toujours active. Si vous quittez cette page, vous ne pourrez plus suivre votre minuteur.
+              </p>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+              <button
+                onClick={handleCancelLeave}
+                className="btn btn-black"
+                style={{ width: '100%' }}
+              >
+                Rester sur la session
+              </button>
+              <button
+                onClick={handleConfirmLeave}
+                className="btn btn-secondary"
+                style={{ width: '100%', color: 'var(--danger-600)', borderColor: 'var(--danger-100)' }}
+              >
+                Quitter quand même
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };

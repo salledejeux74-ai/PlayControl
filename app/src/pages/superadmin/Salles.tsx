@@ -741,7 +741,7 @@ export const Salles: React.FC = () => {
       </div>
 
       {/* Salles Table */}
-      <div className="card" style={{ overflow: 'hidden', padding: 0 }}>
+      <div className="table-container">
         <table className="table">
           <thead>
             <tr>

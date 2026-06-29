@@ -52,7 +52,7 @@ const RevenusSkeleton: React.FC = () => (
       </div>
     </div>
     {/* Stats grid skeleton */}
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 'var(--space-6)' }}>
+    <div className="grid-responsive-1-2-1">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
         <div className="card" style={{ height: '100px' }}>
           <div className="skeleton" style={{ width: '60%', height: '22px', borderRadius: 'var(--radius-sm)', marginBottom: '10px' }} />
@@ -630,7 +630,7 @@ export const AdminRevenus: React.FC = () => {
       )}
 
       {/* Stats and Chart */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 'var(--space-6)' }} className="revenus-grid">
+      <div className="grid-responsive-1-2-1">
 
         {/* Left: Totals */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
@@ -762,7 +762,7 @@ export const AdminRevenus: React.FC = () => {
       </div>
 
       {/* Transactions Table */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+      <div className="table-container">
         <table className="table">
           <thead>
             <tr>

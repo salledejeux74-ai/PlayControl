@@ -250,7 +250,7 @@ export const SuperAdminSettings: React.FC = () => {
       })}
 
       <form onSubmit={handleSaveSettings} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 'var(--space-6)' }} className="settings-grid">
+        <div className="grid-responsive-1-2-1">
           
           {/* Left Column: Security and backup */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>

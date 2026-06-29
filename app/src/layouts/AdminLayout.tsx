@@ -571,14 +571,17 @@ export const AdminLayout: React.FC = () => {
       </aside>
 
       {/* Main Content Area */}
-      <div style={{
-        flex: 1,
-        marginLeft: isSidebarCollapsed ? 'var(--sidebar-collapsed-width)' : 'var(--sidebar-width)',
-        transition: 'margin-left var(--transition-base)',
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: '100vh'
-      }}>
+      <div 
+        className="main-content-wrapper"
+        style={{
+          flex: 1,
+          marginLeft: isSidebarCollapsed ? 'var(--sidebar-collapsed-width)' : 'var(--sidebar-width)',
+          transition: 'margin-left var(--transition-base)',
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: '100vh'
+        }}
+      >
         {/* TopBar */}
         <header style={{
           height: 'var(--topbar-height)',
@@ -601,7 +604,7 @@ export const AdminLayout: React.FC = () => {
           </button>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-            <span style={{ fontSize: 'var(--font-sm)', fontWeight: 700, color: 'var(--neutral-700)' }}>
+            <span className="topbar-title" style={{ fontSize: 'var(--font-sm)', fontWeight: 700, color: 'var(--neutral-700)' }}>
               Salle : <span style={{ color: 'var(--primary-500)' }}>{salleName || 'Zone Gaming Center'}</span>
             </span>
           </div>
@@ -621,7 +624,7 @@ export const AdminLayout: React.FC = () => {
               border: `1px solid ${isOnline ? 'var(--success-100)' : 'var(--primary-100)'}`
             }}>
               {isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
-              <span>{isOnline ? 'Serveur Cloud Connecté' : 'Mode Local-First Actif'}</span>
+              <span className="status-label">{isOnline ? 'Serveur Cloud Connecté' : 'Mode Local-First Actif'}</span>
             </div>
 
             {/* Notifications */}
@@ -828,8 +831,12 @@ export const AdminLayout: React.FC = () => {
           <div style={{ flex: 1 }} onClick={() => setIsMobileMenuOpen(false)} />
         </div>
       )}
-
       <style>{`
+        @media (max-width: 992px) {
+          .status-label {
+            display: none !important;
+          }
+        }
         @media (max-width: 768px) {
           .desktop-sidebar {
             display: none !important;
@@ -847,8 +854,13 @@ export const AdminLayout: React.FC = () => {
             padding: var(--space-4) !important;
             margin-left: 0 !important;
           }
-          div[style*="marginLeft"] {
+          .main-content-wrapper {
             margin-left: 0 !important;
+          }
+        }
+        @media (max-width: 576px) {
+          .topbar-title {
+            display: none !important;
           }
         }
       `}</style>

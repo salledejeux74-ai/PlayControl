@@ -458,7 +458,7 @@ export const AdminClients: React.FC = () => {
       </div>
 
       {/* Clients Table */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+      <div className="table-container">
         <table className="table">
           <thead>
             <tr>
@@ -782,7 +782,7 @@ export const AdminClients: React.FC = () => {
 
               <div className="input-group">
                 <label className="input-label">Montant de la recharge</label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-2)' }}>
+                <div className="grid-responsive-3" style={{ gap: 'var(--space-2)' }}>
                   <button 
                     type="button" 
                     className={`btn ${rechargeAmount === 1000 && !customRecharge ? 'btn-black' : 'btn-secondary'} btn-sm`}

@@ -817,8 +817,13 @@ export const AdminPostes: React.FC = () => {
               gap: '6px'
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 'var(--font-xs)', fontWeight: 600, color: 'var(--neutral-600)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: 'var(--font-xs)', fontWeight: 600, color: 'var(--neutral-600)', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                   👤 <strong>{post.clientName}</strong>
+                  {post.sessionCode && (
+                    <span className="badge" style={{ fontSize: '10px', fontFamily: 'monospace', letterSpacing: '0.5px', padding: '1px 6px', backgroundColor: 'var(--neutral-200)', color: 'var(--neutral-700)', fontWeight: 700 }} title="Code de session actif">
+                      {post.sessionCode}
+                    </span>
+                  )}
                 </span>
                 <span style={{ 
                   color: isUrgent ? 'var(--danger-600)' : 'var(--primary-700)', 
@@ -1533,7 +1538,7 @@ export const AdminPostes: React.FC = () => {
                     <label className="input-label">Durée de jeu</label>
 
                     {/* Boutons preset avec prix */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-2)' }}>
+                    <div className="grid-responsive-3" style={{ gap: 'var(--space-2)' }}>
                       {[
                         { mins: 30,  label: '30 min' },
                         { mins: 60,  label: '1 heure' },
@@ -1648,7 +1653,7 @@ export const AdminPostes: React.FC = () => {
 
               <div className="input-group">
                 <label className="input-label">Durée supplémentaire</label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-2)' }}>
+                <div className="grid-responsive-3" style={{ gap: 'var(--space-2)' }}>
                   <button 
                     type="button" 
                     className={`btn ${selectedDuration === 30 && !customDuration ? 'btn-black' : 'btn-secondary'} btn-sm`}

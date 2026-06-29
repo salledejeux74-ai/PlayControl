@@ -115,7 +115,7 @@ export const Stats: React.FC = () => {
       </div>
 
       {/* Graphs */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 'var(--space-6)' }} className="stats-grid">
+      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 'var(--space-6)' }} className="grid-responsive-1-2-1">
         {/* Bar chart comparison */}
         <div className="card" style={{ padding: 'var(--space-6)' }}>
           <h3 style={{ fontSize: 'var(--font-base)', fontWeight: 700, color: 'var(--neutral-800)', marginBottom: 'var(--space-6)' }}>

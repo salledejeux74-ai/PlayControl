@@ -337,7 +337,7 @@ export const AdminDashboard: React.FC = () => {
       </div>
 
       {/* Main Section Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 'var(--space-6)' }} className="dashboard-grid">
+      <div className="grid-responsive-1-4-1">
         
         {/* Left Side: Graph and Cashier Shifts */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>

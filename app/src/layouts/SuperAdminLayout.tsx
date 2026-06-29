@@ -240,14 +240,17 @@ export const SuperAdminLayout: React.FC = () => {
       </aside>
 
       {/* Main Content Area */}
-      <div style={{
-        flex: 1,
-        marginLeft: isSidebarCollapsed ? 'var(--sidebar-collapsed-width)' : 'var(--sidebar-width)',
-        transition: 'margin-left var(--transition-base)',
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: '100vh'
-      }}>
+      <div 
+        className="main-content-wrapper"
+        style={{
+          flex: 1,
+          marginLeft: isSidebarCollapsed ? 'var(--sidebar-collapsed-width)' : 'var(--sidebar-width)',
+          transition: 'margin-left var(--transition-base)',
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: '100vh'
+        }}
+      >
         {/* TopBar */}
         <header style={{
           height: 'var(--topbar-height)',
@@ -271,7 +274,7 @@ export const SuperAdminLayout: React.FC = () => {
           </button>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-            <span style={{ fontSize: 'var(--font-sm)', fontWeight: 600, color: 'var(--neutral-500)' }}>
+            <span className="topbar-title" style={{ fontSize: 'var(--font-sm)', fontWeight: 600, color: 'var(--neutral-500)' }}>
               Super Administration Panel
             </span>
           </div>
@@ -292,7 +295,7 @@ export const SuperAdminLayout: React.FC = () => {
               border: `1px solid ${isOnline ? 'var(--success-100)' : 'var(--danger-100)'}`
             }}>
               {isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
-              <span>{isOnline ? 'En ligne' : 'Hors ligne'}</span>
+              <span className="status-label">{isOnline ? 'En ligne' : 'Hors ligne'}</span>
             </div>
 
             {/* Notifications Bell */}
@@ -464,9 +467,13 @@ export const SuperAdminLayout: React.FC = () => {
           <div style={{ flex: 1 }} onClick={() => setIsMobileMenuOpen(false)} />
         </div>
       )}
-
       {/* Inline styles for media query responsive support */}
       <style>{`
+        @media (max-width: 992px) {
+          .status-label {
+            display: none !important;
+          }
+        }
         @media (max-width: 768px) {
           .desktop-sidebar {
             display: none !important;
@@ -484,8 +491,13 @@ export const SuperAdminLayout: React.FC = () => {
             padding: var(--space-4) !important;
             margin-left: 0 !important;
           }
-          div[style*="marginLeft"] {
+          .main-content-wrapper {
             margin-left: 0 !important;
+          }
+        }
+        @media (max-width: 576px) {
+          .topbar-title {
+            display: none !important;
           }
         }
       `}</style>

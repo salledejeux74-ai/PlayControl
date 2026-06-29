@@ -200,7 +200,7 @@ export const SuperAdminDashboard: React.FC = () => {
       </div>
 
       {/* Performance Section */}
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 'var(--space-6)' }} className="dashboard-grid">
+      <div className="grid-responsive-2-1">
         {/* Left Column: Svg Revenue Chart & Salles occupancy */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
           {/* Revenue Chart Card */}

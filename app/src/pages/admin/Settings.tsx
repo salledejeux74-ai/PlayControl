@@ -253,7 +253,7 @@ export const AdminSettings: React.FC = () => {
 
       {/* Info card — données actuelles en lecture seule */}
       {salleData && (
-        <div className="card" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', backgroundColor: 'var(--neutral-25, #fafafa)', border: '1px solid var(--neutral-150, #f0f0f0)' }}>
+        <div className="card grid-responsive-1-1" style={{ gap: 'var(--space-4)', backgroundColor: 'var(--neutral-25, #fafafa)', border: '1px solid var(--neutral-150, #f0f0f0)' }}>
           <div>
             <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--neutral-400)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Nom actuel</div>
             <div style={{ fontWeight: 700, color: 'var(--neutral-800)', fontSize: 'var(--font-sm)' }}>{salleData.name}</div>

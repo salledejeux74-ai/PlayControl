@@ -683,7 +683,15 @@ export const CaissierLayout: React.FC = () => {
           .cashier-nav {
             order: 3;
             width: 100%;
-            justify-content: space-between;
+            display: flex;
+            gap: var(--space-2);
+            overflow-x: auto;
+            white-space: nowrap;
+            padding-bottom: 4px;
+            scrollbar-width: none;
+          }
+          .cashier-nav::-webkit-scrollbar {
+            display: none;
           }
           .cashier-user-info {
             display: none !important;
