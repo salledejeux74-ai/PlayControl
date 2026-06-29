@@ -144,7 +144,7 @@ const LoginScreen: React.FC<{
       >
         {/* Logo & Brand */}
         <div style={{ textAlign: 'center', marginBottom: 'var(--space-7)' }}>
-          <img src={logoImg} alt="PlayControl Logo" style={{
+          <img src={logoImg} alt="PolyControl Logo" style={{
             width: '80px', height: '80px',
             borderRadius: 'var(--radius-lg)',
             objectFit: 'cover',
@@ -279,7 +279,7 @@ const CodeActivationScreen: React.FC<{
       return;
     }
 
-    localStorage.setItem('playcontrol_session_code', normalized);
+    localStorage.setItem(`playcontrol_session_code_${client.username}`, normalized);
     setSuccess(true);
     setTimeout(() => {
       onActivated();
@@ -464,7 +464,7 @@ const PlayerDashboard: React.FC<{
         {/* Top bar */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-4)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
-            <img src={logoImg} alt="PlayControl" style={{ width: '44px', height: '44px', borderRadius: 'var(--radius-md)', objectFit: 'cover' }} />
+            <img src={logoImg} alt="PolyControl" style={{ width: '44px', height: '44px', borderRadius: 'var(--radius-md)', objectFit: 'cover' }} />
             <div>
               <p style={{ color: 'var(--neutral-500)', fontSize: 'var(--font-xs)', margin: 0 }}>Espace Joueur</p>
               <h1 style={{ fontSize: 'var(--font-lg)', fontWeight: 800, color: 'var(--neutral-800)', margin: 0 }}>
@@ -810,7 +810,7 @@ export const JoueurPortal: React.FC = () => {
 
       setLoggedClient(member);
       sessionStorage.setItem('playcontrol_logged_client', JSON.stringify(member));
-      localStorage.setItem('playcontrol_session_code', normalized);
+      localStorage.setItem(`playcontrol_session_code_${member.username}`, normalized);
       setScreen('dashboard');
       return { success: true };
     } else {
@@ -839,16 +839,18 @@ export const JoueurPortal: React.FC = () => {
 
       setLoggedClient(guest);
       sessionStorage.setItem('playcontrol_logged_client', JSON.stringify(guest));
-      localStorage.setItem('playcontrol_session_code', normalized);
+      localStorage.setItem(`playcontrol_session_code_${guest.username}`, normalized);
       setScreen('dashboard');
       return { success: true };
     }
   };
 
   const handleLogout = () => {
+    if (loggedClient) {
+      localStorage.removeItem(`playcontrol_session_code_${loggedClient.username}`);
+    }
     setLoggedClient(null);
     sessionStorage.removeItem('playcontrol_logged_client');
-    localStorage.removeItem('playcontrol_session_code');
   };
 
   const handleCancelLeave = () => {
@@ -864,13 +866,24 @@ export const JoueurPortal: React.FC = () => {
   // Auto-login avec le code stocké localement si la session est toujours active
   useEffect(() => {
     const autoLogin = async () => {
-      const savedCode = localStorage.getItem('playcontrol_session_code');
+      let savedCode: string | null = null;
+      let matchingKey: string | null = null;
+      
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('playcontrol_session_code_')) {
+          savedCode = localStorage.getItem(key);
+          matchingKey = key;
+          break;
+        }
+      }
+
       if (savedCode && !loggedClient) {
         try {
           const res = await handleSubmitCode(savedCode);
-          if (!res.success) {
+          if (!res.success && matchingKey) {
             // Le code n'est plus valide/actif, on nettoie le localStorage
-            localStorage.removeItem('playcontrol_session_code');
+            localStorage.removeItem(matchingKey);
           }
         } catch (e) {
           console.error("Erreur de reconnexion automatique :", e);

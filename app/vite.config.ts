@@ -4,14 +4,15 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: './',
   plugins: [
     react(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'logo.jpeg'],
       manifest: {
-        name: 'PlayControl — Gestion de Salle de Jeux',
-        short_name: 'PlayControl',
+        name: 'PolyControl — Gestion de Salle de Jeux',
+        short_name: 'PolyControl',
         description: 'Maîtrisez chaque session de jeu. Gestion complète de votre salle de gaming.',
         theme_color: '#1a6de0',
         background_color: '#0f172a',
