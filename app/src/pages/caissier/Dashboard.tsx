@@ -355,7 +355,7 @@ export const CaissierDashboard: React.FC = () => {
     const targetType = materialTypes.find(t => t.type === showLaunchModal.type);
     const rate = targetType ? targetType.price : 1000;
     const rateDuration = targetType ? targetType.durationMinutes : 60;
-    cost = Math.ceil((rate / rateDuration) * duration);
+    cost = Math.ceil(Math.round(((rate / rateDuration) * duration) * 10000) / 10000);
 
     if (isGuest) {
       // Pour un invité temporaire : pas de nom requis, on génère un identifiant
@@ -544,7 +544,7 @@ export const CaissierDashboard: React.FC = () => {
     const targetType = materialTypes.find(t => t.type === showExtendModal.type);
     const rate = targetType ? targetType.price : 1000;
     const rateDuration = targetType ? targetType.durationMinutes : 60;
-    const cost = Math.ceil((rate / rateDuration) * extMinutes);
+    const cost = Math.ceil(Math.round(((rate / rateDuration) * extMinutes) * 10000) / 10000);
 
     try {
       if (showExtendModal.clientName && !showExtendModal.clientName.startsWith('Invité-')) {
@@ -1365,7 +1365,7 @@ export const CaissierDashboard: React.FC = () => {
                 const unitMinutes = mType?.durationMinutes ?? 60;
 
                 const calcCost = (mins: number) =>
-                  Math.ceil((unitPrice / unitMinutes) * mins);
+                  Math.ceil(Math.round(((unitPrice / unitMinutes) * mins) * 10000) / 10000);
 
                 const activeCost = calcCost(selectedDuration);
 

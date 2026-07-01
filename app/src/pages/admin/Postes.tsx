@@ -432,7 +432,7 @@ export const AdminPostes: React.FC = () => {
       const targetType = materialTypes.find(t => t.type === showLaunchModal.type);
       const rate = targetType ? targetType.price : 1000;
       const rateDuration = targetType ? targetType.durationMinutes : 60;
-      const cost = Math.ceil((rate / rateDuration) * duration);
+      const cost = Math.ceil(Math.round(((rate / rateDuration) * duration) * 10000) / 10000);
 
       if (launchMode === 'time' && targetClient.balance < cost) {
         showToastMsg(`Solde insuffisant pour ${targetClient.fullName}. Requis : ${cost} FCFA. Solde : ${targetClient.balance} FCFA.`, 'error');
@@ -588,7 +588,7 @@ export const AdminPostes: React.FC = () => {
       const targetType = materialTypes.find(t => t.type === showExtendModal.type);
       const rate = targetType ? targetType.price : 1000;
       const rateDuration = targetType ? targetType.durationMinutes : 60;
-      const cost = Math.ceil((rate / rateDuration) * extMinutes);
+      const cost = Math.ceil(Math.round(((rate / rateDuration) * extMinutes) * 10000) / 10000);
 
       if (clData.abonnement_type !== 'Aucun') {
         if ((clData.abonnement_remaining_time || 0) < extMinutes) {
@@ -1529,7 +1529,7 @@ export const AdminPostes: React.FC = () => {
                 const unitMinutes = mType?.durationMinutes ?? 60;
 
                 const calcCost = (mins: number) =>
-                  Math.ceil((unitPrice / unitMinutes) * mins);
+                  Math.ceil(Math.round(((unitPrice / unitMinutes) * mins) * 10000) / 10000);
 
                 const activeCost = calcCost(selectedDuration);
 
